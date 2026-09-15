@@ -41,7 +41,7 @@ export function ReplenishmentBoard({ items }: { items: any[] }) {
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Replenishment</h1>
-        <label className="flex w-full max-w-md items-center gap-2 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-500">
+        <label className="flex w-full max-w-md items-center gap-2 surface-card px-3 py-2 text-sm text-stone-500">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
             <circle cx="11" cy="11" r="5.5" />
             <path d="M16 16l4.5 4.5" strokeLinecap="round" />

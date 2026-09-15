@@ -64,7 +64,7 @@ export default function SettingsPage() {
 
       <div className="space-y-6">
         {groups.map((group) => (
-          <section key={group.title} className="rounded-md border border-stone-200 bg-white p-4 sm:p-5">
+          <section key={group.title} className="surface-card p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h2 className="text-base font-semibold text-stone-900">{group.title}</h2>
               {group.title === 'Account' ? <Button variant="danger" className="h-9 px-3 text-sm">Delete account</Button> : null}

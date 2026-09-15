@@ -10,7 +10,7 @@ const promptChips = [
 export default function AiAssistantPage() {
   return (
     <main className="mx-auto max-w-5xl p-4 sm:p-6 xl:p-8">
-      <div className="rounded-md border border-stone-200 bg-white p-5 sm:p-6">
+      <div className="surface-card p-5 sm:p-6">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">

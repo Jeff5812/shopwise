@@ -55,9 +55,9 @@ export function Sidebar({
               key={item.href}
               href={item.href}
               onClick={onClose}
-              className={`flex items-center gap-2.5 rounded-none border-l-2 px-2.5 py-1.5 text-[13px] transition-colors ${
+              className={`flex items-center gap-2.5 rounded-lg border-l-2 px-2.5 py-1.5 text-[13px] transition-all ${
                 active
-                  ? 'border-stone-900 bg-stone-100 font-semibold text-stone-900'
+                  ? 'border-emerald-600 bg-emerald-50 font-semibold text-emerald-800 shadow-[inset_0_0_0_1px_rgba(5,150,105,0.12)]'
                   : item.accent
                     ? 'border-transparent font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900'
                     : 'border-transparent text-stone-500 hover:bg-stone-100 hover:text-stone-900'

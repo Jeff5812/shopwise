@@ -72,7 +72,7 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Inventory</h1>
         <div className="flex w-full max-w-lg items-center gap-2 sm:w-auto">
-          <label className="flex flex-1 items-center gap-2 rounded-md border border-stone-200 bg-white px-3 py-2 text-sm text-stone-500">
+          <label className="flex flex-1 items-center gap-2 surface-card px-3 py-2 text-sm text-stone-500">
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
               <circle cx="11" cy="11" r="5.5" />
               <path d="M16 16l4.5 4.5" strokeLinecap="round" />
@@ -125,7 +125,7 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+      <div className="overflow-hidden surface-card">
         <div className="hidden border-b border-stone-200 bg-stone-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500 md:grid md:grid-cols-[1.6fr_1fr_0.9fr_0.8fr_0.8fr_0.8fr_0.7fr]">
           <div className="px-4 py-3">Product</div>
           <div className="px-4 py-3">SKU</div>

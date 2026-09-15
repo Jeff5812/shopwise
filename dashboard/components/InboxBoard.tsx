@@ -89,7 +89,7 @@ export function InboxBoard({ conversations }: { conversations: any[] }) {
               <p className="mt-2 text-sm leading-6 text-stone-600">{selectedConversation?.raw_text || 'Hi, I would like 2 black medium shirts and can pay via transfer.'}</p>
             </div>
 
-            <div className="rounded-md border border-stone-200 bg-white p-4">
+            <div className="surface-card p-4">
               <p className="text-sm font-semibold text-stone-900">AI understanding</p>
               <div className="mt-3 space-y-2 divide-y divide-stone-100">
                 <div className="flex items-center justify-between gap-3 py-2 text-sm text-stone-700">

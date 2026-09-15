@@ -1,22 +1,22 @@
 const STATUS_STYLES: Record<string, string> = {
-  new: 'bg-blue-50 text-blue-700',
-  confirmed: 'bg-emerald-50 text-emerald-700',
-  processing: 'bg-amber-50 text-amber-700',
-  shipped: 'bg-blue-50 text-blue-700',
-  delivered: 'bg-emerald-50 text-emerald-700',
-  cancelled: 'bg-rose-50 text-rose-700',
-  healthy: 'bg-emerald-50 text-emerald-700',
-  low: 'bg-amber-50 text-amber-700',
-  critical: 'bg-rose-50 text-rose-700',
-  out_of_stock: 'bg-rose-50 text-rose-700',
-  pending: 'bg-amber-50 text-amber-700',
-  paid: 'bg-emerald-50 text-emerald-700',
+  new: 'bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-200',
+  confirmed: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+  processing: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200',
+  shipped: 'bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-200',
+  delivered: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+  cancelled: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200',
+  healthy: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+  low: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200',
+  critical: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200',
+  out_of_stock: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200',
+  pending: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200',
+  paid: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
 };
 
 export function Badge({ status }: { status: string }) {
-  const style = STATUS_STYLES[status] || 'bg-stone-100 text-stone-600';
+  const style = STATUS_STYLES[status] || 'bg-stone-100 text-stone-700 ring-1 ring-inset ring-stone-200';
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11.5px] font-medium capitalize ${style}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11.5px] font-semibold capitalize ${style}`}>
       {status.replace('_', ' ')}
     </span>
   );

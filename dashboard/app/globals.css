@@ -5,6 +5,14 @@
   --font-serif: var(--font-lora), Georgia, 'Times New Roman', serif;
   --color-stone-50: #FAFAF9;
   --color-stone-900: #1C1917;
+
+  /* Emerald brand scale — primary accent, restored as a real color, not a wash */
+  --color-emerald-50: #ECFDF5;
+  --color-emerald-100: #D1FAE5;
+  --color-emerald-500: #10B981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065F46;
 }
 
 html, body {
@@ -15,4 +23,33 @@ html, body {
 .font-data {
   font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
   font-variant-numeric: tabular-nums;
+}
+
+/* Depth system — cards, panels, popovers. Use these classes instead of a bare border. */
+.surface-card {
+  background: #FFFFFF;
+  border: 1px solid #E7E5E4; /* stone-200 */
+  border-radius: 0.75rem;
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.04),
+    0 8px 24px -12px rgba(28, 25, 23, 0.12);
+}
+
+.surface-card-hover {
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+.surface-card-hover:hover {
+  box-shadow:
+    0 2px 4px rgba(28, 25, 23, 0.05),
+    0 16px 32px -14px rgba(28, 25, 23, 0.18);
+  transform: translateY(-1px);
+}
+
+/* Elevated / glossy primary surface — sidebar, primary CTAs, active nav */
+.surface-emerald {
+  background: linear-gradient(180deg, #059669 0%, #047857 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 1px 2px rgba(4, 120, 87, 0.3),
+    0 8px 20px -8px rgba(4, 120, 87, 0.45);
 }
