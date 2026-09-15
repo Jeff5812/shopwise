@@ -1,7 +1,9 @@
 import os
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from db import (
@@ -18,6 +20,9 @@ from db import (
     confirm_order,
     cancel_order,
     get_order_items_with_names,
+    get_review_queue,
+    resolve_review_queue,
+    adjust_stock,
 )
 from classifier import classify_message
 from order_extractor import extract_order, EXTRACTION_CONFIDENCE_THRESHOLD
@@ -27,6 +32,16 @@ from pending_response_classifier import classify_pending_response
 load_dotenv()
 
 app = FastAPI()
+
+# Dashboard writes go through this API rather than straight to Supabase, so the stock/order
+# rules already in db.py (restock on cancel, decrement on create) stay the single source of truth.
+DASHBOARD_ORIGIN = os.getenv("DASHBOARD_ORIGIN", "http://localhost:3000")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[DASHBOARD_ORIGIN],
+    allow_methods=["GET", "POST", "PATCH"],
+    allow_headers=["*"],
+)
 
 VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
@@ -222,3 +237,52 @@ async def receive_message(request: Request):
     except (KeyError, IndexError) as e:
         print("Webhook parse error (likely a non-message event):", e)
         return {"status": "ignored_unparseable_event"}
+
+
+# --- Dashboard-facing API ---
+# Reads still go straight from the dashboard to Supabase (fast, simple, no business logic involved).
+# Writes come through here instead, so they reuse the same order/stock rules the WhatsApp flow uses.
+
+class StockUpdate(BaseModel):
+    stock_quantity: int
+
+
+@app.post("/orders/{order_id}/confirm")
+async def confirm_order_endpoint(order_id: str):
+    try:
+        order = confirm_order(order_id)
+        return {"status": "confirmed", "order": order}
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+
+@app.post("/orders/{order_id}/cancel")
+async def cancel_order_endpoint(order_id: str):
+    try:
+        order = cancel_order(order_id)
+        return {"status": "canceled", "order": order}
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+
+@app.patch("/inventory/{variant_id}")
+async def update_inventory_endpoint(variant_id: str, body: StockUpdate):
+    try:
+        variant = adjust_stock(variant_id, body.stock_quantity)
+        return {"status": "updated", "variant": variant}
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Variant not found")
+
+
+@app.get("/review-queue")
+async def review_queue_endpoint(vendor_id: str):
+    return {"items": get_review_queue(vendor_id)}
+
+
+@app.post("/review-queue/{item_id}/resolve")
+async def resolve_review_queue_endpoint(item_id: str):
+    try:
+        item = resolve_review_queue(item_id)
+        return {"status": "resolved", "item": item}
+    except IndexError:
+        raise HTTPException(status_code=404, detail="Review queue item not found")

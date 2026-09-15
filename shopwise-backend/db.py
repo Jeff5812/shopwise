@@ -115,6 +115,29 @@ def get_order_items_with_names(order_id: str):
     return result
 
 
+def get_review_queue(vendor_id: str, resolved: bool = False):
+    """Review queue items for this vendor, joined through messages for vendor scoping.
+    Requires a `resolved` boolean column on review_queue — add it if it isn't there yet."""
+    result = (
+        supabase.table("review_queue")
+        .select("*, messages!inner(vendor_id, customer_id, raw_text, intent, related_order_id)")
+        .eq("messages.vendor_id", vendor_id)
+        .eq("resolved", resolved)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return result.data
+
+
+def resolve_review_queue(item_id: str):
+    return supabase.table("review_queue").update({"resolved": True}).eq("id", item_id).execute().data[0]
+
+
+def adjust_stock(variant_id: str, new_quantity: int):
+    """Sets stock to an exact value (dashboard-driven correction), not a delta."""
+    return supabase.table("product_variants").update({"stock_quantity": new_quantity}).eq("id", variant_id).execute().data[0]
+
+
 def get_faq_snippets(vendor_id: str):
     """Returns the vendor's own FAQ/policy answers — the only source FAQ replies are allowed to draw from."""
     return supabase.table("faq_snippets").select("*").eq("vendor_id", vendor_id).execute().data
