@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: var(--font-lora), Georgia, 'Times New Roman', serif;
+  --color-stone-50: #FAFAF9;
+  --color-stone-900: #1C1917;
+}
+
+html, body {
+  background-color: #FAFAF9;
+  color: #1C1917;
+}
+
+.font-data {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}

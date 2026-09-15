@@ -1,0 +1,14 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated output
+**/node_modules/
+**/.next/
+**/__pycache__/
+**/*.py[cod]
+
+# Local tooling
+.vscode/
+.DS_Store
