@@ -14,7 +14,7 @@ async function getVendor() {
 async function getCustomers(vendorId: string) {
   const { data: orders } = await supabase
     .from('orders')
-    .select('id, total_amount, created_at, customer_id, customers(display_name, wa_id)')
+    .select('id, total_amount, created_at, customer_id, customers(id, display_name, wa_id)')
     .eq('vendor_id', vendorId)
     .order('created_at', { ascending: false });
 
