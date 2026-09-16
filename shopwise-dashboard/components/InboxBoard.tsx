@@ -1,7 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/Button';
+import { resolveReviewItem, ApiError } from '@/lib/api';
 
 function extractAiFields(raw: string) {
   const lower = raw.toLowerCase();
@@ -19,12 +21,29 @@ function extractAiFields(raw: string) {
 }
 
 export function InboxBoard({ conversations }: { conversations: any[] }) {
+  const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(conversations[0]?.id || null);
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedId) || conversations[0] || null,
     [conversations, selectedId]
   );
+
+  async function handleResolve() {
+    if (!selectedConversation?.reviewItem) return;
+    setResolving(true);
+    setResolveError(null);
+    try {
+      await resolveReviewItem(selectedConversation.reviewItem.id);
+      router.refresh();
+    } catch (err) {
+      setResolveError(err instanceof ApiError ? err.message : 'Could not resolve this item. Try again.');
+    } finally {
+      setResolving(false);
+    }
+  }
 
   if (!conversations.length) {
     return (
@@ -69,6 +88,7 @@ export function InboxBoard({ conversations }: { conversations: any[] }) {
                       {conversation.customer || 'Customer'}
                     </span>
                     {conversation.unread ? <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /> : null}
+                    {conversation.reviewItem ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">Flagged</span> : null}
                   </div>
                   <p className="truncate text-sm text-stone-500">{conversation.preview || 'New message'}</p>
                 </div>
@@ -82,6 +102,21 @@ export function InboxBoard({ conversations }: { conversations: any[] }) {
           <div className="border-b border-stone-200 px-5 py-4">
             <h2 className="text-lg font-semibold text-stone-900">{selectedConversation?.customer || 'Customer conversation'}</h2>
           </div>
+
+          {selectedConversation?.reviewItem && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3">
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Needs review</p>
+                <p className="text-xs text-amber-700">Reason: {selectedConversation.reviewItem.reason.replace(/_/g, ' ')}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" className="h-9 px-3 text-sm" onClick={handleResolve} disabled={resolving}>
+                  {resolving ? 'Resolving…' : 'Mark resolved'}
+                </Button>
+              </div>
+            </div>
+          )}
+          {resolveError && <p className="border-b border-stone-200 px-5 py-2 text-sm text-rose-600">{resolveError}</p>}
 
           <div className="flex-1 space-y-5 p-5">
             <div className="rounded-md border border-stone-200 bg-stone-50 p-3">

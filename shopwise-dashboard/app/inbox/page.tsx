@@ -21,6 +21,15 @@ async function getMessages(vendorId: string) {
 
   if (!data) return [];
 
+  const messageIds = data.map((m: any) => m.id);
+  const { data: reviewItems } = await supabase
+    .from('review_queue')
+    .select('id, message_id, reason, resolved')
+    .in('message_id', messageIds)
+    .eq('resolved', false);
+
+  const reviewByMessageId = new Map((reviewItems ?? []).map((item: any) => [item.message_id, item]));
+
   return data.map((message: any) => ({
     id: message.id,
     customer: message.customers?.display_name || message.customers?.wa_id || 'Customer',
@@ -29,6 +38,7 @@ async function getMessages(vendorId: string) {
     unread: message.direction === 'inbound',
     time: new Date(message.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
     direction: message.direction,
+    reviewItem: reviewByMessageId.get(message.id) || null,
   }));
 }
 

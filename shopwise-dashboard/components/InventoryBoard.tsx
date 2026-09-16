@@ -1,8 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
+import { updateStock, ApiError } from '@/lib/api';
 
 function formatMoney(value: number | null | undefined) {
   const numeric = Number(value ?? 0);
@@ -18,9 +20,13 @@ function getStockStatus(stock: number, typicalStock: number) {
 }
 
 export function InventoryBoard({ inventory }: { inventory: any[] }) {
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const [filter, setFilter] = useState<'all' | 'healthy' | 'low' | 'critical' | 'out_of_stock'>('all');
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
+  const [stockError, setStockError] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -46,6 +52,25 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
   }, [inventory]);
 
   const activeProduct = selectedProduct || filtered[0] || null;
+
+  async function handleStockSave(variantId: string) {
+    const raw = editValues[variantId];
+    const parsed = Number(raw);
+    if (raw === undefined || Number.isNaN(parsed) || parsed < 0) {
+      setStockError('Enter a valid non-negative number.');
+      return;
+    }
+    setPendingVariantId(variantId);
+    setStockError(null);
+    try {
+      await updateStock(variantId, parsed);
+      router.refresh();
+    } catch (err) {
+      setStockError(err instanceof ApiError ? err.message : 'Could not update stock. Try again.');
+    } finally {
+      setPendingVariantId(null);
+    }
+  }
 
   if (!inventory.length) {
     return (
@@ -147,9 +172,9 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
             <div className="px-4 py-3 font-data text-sm text-stone-600">{item.sku || '—'}</div>
             <div className="px-4 py-3 font-data text-sm text-stone-900">{item.stock_quantity ?? 0}</div>
             <div className="px-4 py-3 font-data text-sm text-stone-600">{formatMoney(item.cost_price)}</div>
-            <div className="px-4 py-3 font-data text-sm text-stone-600">{formatMoney(item.price || item.selling_price)}</div>
+            <div className="px-4 py-3 font-data text-sm text-stone-600">{formatMoney(item.price)}</div>
             <div className="px-4 py-3 font-data text-sm text-stone-600">
-              {item.price || item.selling_price ? formatMoney((Number(item.price || item.selling_price) - Number(item.cost_price || 0)) * Number(item.stock_quantity || 0)) : '—'}
+              {item.price ? formatMoney((Number(item.price) - Number(item.cost_price || 0)) * Number(item.stock_quantity || 0)) : '—'}
             </div>
             <div className="px-4 py-3"><Badge status={item.status} /></div>
           </button>
@@ -181,6 +206,45 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
 
               <div className="flex flex-wrap items-center gap-2"><Badge status={activeProduct.status} /></div>
 
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-stone-400">Variants &amp; stock</p>
+                <div className="space-y-2">
+                  {(activeProduct.variants || []).length === 0 && (
+                    <p className="text-sm text-stone-500">No variants recorded for this product.</p>
+                  )}
+                  {(activeProduct.variants || []).map((variant: any) => {
+                    const label = [variant.size, variant.color].filter(Boolean).join(' / ') || 'Default';
+                    const currentEdit = editValues[variant.id] ?? String(variant.stock_quantity);
+                    return (
+                      <div key={variant.id} className="flex items-center justify-between gap-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+                        <div>
+                          <p className="text-sm font-medium text-stone-800">{label}</p>
+                          <p className="text-xs text-stone-500">Current stock: {variant.stock_quantity}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            value={currentEdit}
+                            onChange={(event) => setEditValues((prev) => ({ ...prev, [variant.id]: event.target.value }))}
+                            className="w-20 rounded-md border border-stone-300 px-2 py-1.5 text-sm text-stone-800 focus:border-stone-500 focus:outline-none"
+                          />
+                          <Button
+                            variant="secondary"
+                            className="h-9 px-3 text-sm"
+                            onClick={() => handleStockSave(variant.id)}
+                            disabled={pendingVariantId === variant.id}
+                          >
+                            {pendingVariantId === variant.id ? 'Saving…' : 'Save'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {stockError && <p className="mt-2 text-sm text-rose-600">{stockError}</p>}
+              </div>
+
               <div className="grid grid-cols-2 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
                 <div>
                   <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Units sold</p>
@@ -196,11 +260,11 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Price</p>
-                  <p className="mt-2 font-data text-stone-800">{activeProduct.price || activeProduct.selling_price ? formatMoney(Number(activeProduct.price || activeProduct.selling_price)) : 'Not available'}</p>
+                  <p className="mt-2 font-data text-stone-800">{activeProduct.price ? formatMoney(Number(activeProduct.price)) : 'Not available'}</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Profit</p>
-                  <p className="mt-2 font-data text-stone-800">{activeProduct.cost_price && (activeProduct.price || activeProduct.selling_price) ? formatMoney(Number(activeProduct.price || activeProduct.selling_price) - Number(activeProduct.cost_price)) : 'Not available'}</p>
+                  <p className="mt-2 font-data text-stone-800">{activeProduct.cost_price && (activeProduct.price) ? formatMoney(Number(activeProduct.price) - Number(activeProduct.cost_price)) : 'Not available'}</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Supplier</p>

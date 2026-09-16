@@ -1,8 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
+import { confirmOrder, cancelOrder, ApiError } from '@/lib/api';
 
 const PAGE_SIZE = 8;
 
@@ -38,10 +40,41 @@ function formatDate(value: string | null | undefined) {
 }
 
 export function OrdersBoard({ orders }: { orders: any[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [actionPending, setActionPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function handleConfirm(order: any) {
+    setActionPending(true);
+    setActionError(null);
+    try {
+      await confirmOrder(order.id);
+      setSelectedOrder(null);
+      router.refresh();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Could not confirm this order. Try again.');
+    } finally {
+      setActionPending(false);
+    }
+  }
+
+  async function handleCancel(order: any) {
+    setActionPending(true);
+    setActionError(null);
+    try {
+      await cancelOrder(order.id);
+      setSelectedOrder(null);
+      router.refresh();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Could not cancel this order. Try again.');
+    } finally {
+      setActionPending(false);
+    }
+  }
 
   const filteredOrders = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -198,14 +231,14 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
       )}
 
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 bg-stone-900/20" onClick={() => setSelectedOrder(null)}>
+        <div className="fixed inset-0 z-50 bg-stone-900/20" onClick={() => { setSelectedOrder(null); setActionError(null); }}>
           <div className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-stone-200 bg-white" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">Order details</p>
                 <h2 className="mt-1 text-xl font-semibold text-stone-900">#{selectedOrder.id.slice(0, 8)}</h2>
               </div>
-              <button type="button" onClick={() => setSelectedOrder(null)} className="text-stone-500 hover:text-stone-900">✕</button>
+              <button type="button" onClick={() => { setSelectedOrder(null); setActionError(null); }} className="text-stone-500 hover:text-stone-900">✕</button>
             </div>
 
             <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
@@ -303,7 +336,31 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
                   </div>
                 </div>
                 <div className="mt-4">
-                  <Button variant="secondary" className="h-10 px-4 text-sm">Confirm order</Button>
+                  {(selectedOrder.status || '').toLowerCase() === 'awaiting_confirmation' ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="primary"
+                        className="h-10 px-4 text-sm"
+                        onClick={() => handleConfirm(selectedOrder)}
+                        disabled={actionPending}
+                      >
+                        {actionPending ? 'Confirming…' : 'Confirm order'}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        className="h-10 px-4 text-sm"
+                        onClick={() => handleCancel(selectedOrder)}
+                        disabled={actionPending}
+                      >
+                        {actionPending ? 'Cancelling…' : 'Cancel order'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-stone-500">
+                      This order is {(selectedOrder.status || 'processed').replace('_', ' ')} — no pending action needed.
+                    </p>
+                  )}
+                  {actionError && <p className="mt-2 text-sm text-rose-600">{actionError}</p>}
                 </div>
               </div>
             </div>
