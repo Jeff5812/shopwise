@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -91,6 +92,34 @@ def get_pending_order(vendor_id: str, customer_id: str, max_age_minutes: int = 3
 
 def confirm_order(order_id: str):
     return supabase.table("orders").update({"status": "confirmed"}).eq("id", order_id).execute().data[0]
+
+
+def get_order(order_id: str):
+    result = supabase.table("orders").select("*").eq("id", order_id).limit(1).execute()
+    return result.data[0] if result.data else None
+
+
+def create_payment_record(order_id, provider, provider_reference, amount, currency, status):
+    return supabase.table("payments").insert({
+        "order_id": order_id,
+        "provider": provider,
+        "provider_reference": provider_reference,
+        "amount": amount,
+        "currency": currency,
+        "status": status,
+    }).execute()
+
+
+def get_payment_by_reference(reference: str):
+    result = supabase.table("payments").select("*").eq("provider_reference", reference).execute()
+    return result.data[0] if result.data else None
+
+
+def mark_payment_paid(payment_id: str):
+    return supabase.table("payments").update({
+        "status": "paid",
+        "paid_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", payment_id).execute()
 
 
 def cancel_order(order_id: str):

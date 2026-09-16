@@ -28,6 +28,8 @@ from classifier import classify_message
 from order_extractor import extract_order, EXTRACTION_CONFIDENCE_THRESHOLD
 from reply_generator import generate_order_confirmation, generate_faq_answer
 from pending_response_classifier import classify_pending_response
+from paystack_service import PaystackService
+from payment_service import create_payment_for_order, process_webhook_charge_success
 
 load_dotenv()
 
@@ -47,6 +49,7 @@ VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_SYSTEM_USER_TOKEN")
 GRAPH_VERSION = os.getenv("GRAPH_API_VERSION", "v25.0")
+PAYSTACK_DEFAULT_EMAIL = os.getenv("PAYSTACK_DEFAULT_EMAIL")
 
 CONFIDENCE_THRESHOLD = 0.6  # below this, escalate to review queue regardless of intent
 
@@ -142,10 +145,13 @@ async def receive_message(request: Request):
             if action == "confirm":
                 confirm_order(pending_order["id"])
                 update_message_classification(logged_message["id"], "order", 1.0)
+                customer_email = customer.get("email") or PAYSTACK_DEFAULT_EMAIL
+                if not customer_email:
+                    raise HTTPException(status_code=500, detail="customer email is required for payment")
+                checkout_url = await create_payment_for_order(pending_order["id"], customer_email)
                 await send_whatsapp_message(
                     sender_wa_id,
-                    "Perfect, your order is confirmed. A payment link will be sent your way shortly."
-                    # Payment link generation (Paystack/Flutterwave) not yet built, this is a stub.
+                    f"Perfect, your order is confirmed. Please complete payment here: {checkout_url}"
                 )
                 return {"status": "order_confirmed", "order_id": pending_order["id"]}
 
@@ -237,6 +243,21 @@ async def receive_message(request: Request):
     except (KeyError, IndexError) as e:
         print("Webhook parse error (likely a non-message event):", e)
         return {"status": "ignored_unparseable_event"}
+
+
+@app.post("/webhooks/paystack")
+async def paystack_webhook(request: Request):
+    raw_body = await request.body()
+    signature = request.headers.get("x-paystack-signature", "")
+
+    if not PaystackService.verify_signature(raw_body, signature):
+        raise HTTPException(status_code=401, detail="invalid signature")
+
+    payload = await request.json()
+    if payload.get("event") == "charge.success":
+        process_webhook_charge_success(payload["data"])
+
+    return {"status": "ok"}
 
 
 # --- Dashboard-facing API ---
