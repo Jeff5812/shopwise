@@ -207,7 +207,11 @@ async def receive_message(request: Request):
         # Low confidence always escalates, regardless of what intent it guessed
         if confidence < CONFIDENCE_THRESHOLD or intent == "unclassified":
             add_to_review_queue(logged_message["id"], reason="low_confidence")
-            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Thanks for reaching out. Let me just check on this and I'll come right back to you.")
+            # Pure boilerplate — sent via plain send_whatsapp_message, NOT reply_and_log. Logging this
+            # to history was causing a real regression: at temperature 0, showing the model its own
+            # prior hedging as recent context biased later classification toward repeating it, even
+            # on unambiguous messages. Real, informative replies still go through reply_and_log below.
+            await send_whatsapp_message(sender_wa_id, "Thanks for reaching out. Let me just check on this and I'll come right back to you.")
             return {"status": "escalated_low_confidence"}
 
         # Branch by intent — negotiation logic is still a stub for now
@@ -256,7 +260,9 @@ async def receive_message(request: Request):
                 await reply_and_log(vendor["id"], customer["id"], sender_wa_id, faq_result["reply"])
             else:
                 add_to_review_queue(logged_message["id"], reason="unparseable")
-                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Good question. Let me check with the seller and get right back to you.")
+                # Same reasoning as the classifier escalation above — pure boilerplate, don't let it
+                # bias future turns toward more hedging.
+                await send_whatsapp_message(sender_wa_id, "Good question. Let me check with the seller and get right back to you.")
         elif intent == "negotiation":
             add_to_review_queue(logged_message["id"], reason="negotiation_below_floor")
             await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "I hear you. Let me see what I can work out on that and I'll get back to you shortly.")
