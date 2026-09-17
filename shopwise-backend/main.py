@@ -20,6 +20,7 @@ from db import (
     create_order,
     get_pending_order,
     confirm_order,
+    mark_pending_payment,
     cancel_order,
     get_order_items_with_names,
     get_review_queue,
@@ -157,17 +158,25 @@ async def receive_message(request: Request):
                 action = "other"
 
             if action == "confirm":
-                confirm_order(pending_order["id"])
+                mark_pending_payment(pending_order["id"])
                 update_message_classification(logged_message["id"], "order", 1.0)
                 customer_email = customer.get("email") or PAYSTACK_DEFAULT_EMAIL
                 if not customer_email:
-                    raise HTTPException(status_code=500, detail="customer email is required for payment")
+                    # Order stays correctly at pending_payment — don't crash the webhook with
+                    # a raw 500 (that leaves WhatsApp with no reply at all). Ask for what we
+                    # need and let the seller see it, same as any other unresolvable case.
+                    add_to_review_queue(logged_message["id"], reason="missing_email_for_payment")
+                    await reply_and_log(
+                        vendor["id"], customer["id"], sender_wa_id,
+                        "Your order is confirmed! I just need an email address to send your payment link — could you share one?"
+                    )
+                    return {"status": "order_pending_payment_missing_email", "order_id": pending_order["id"]}
                 checkout_url = await create_payment_for_order(pending_order["id"], customer_email)
                 await reply_and_log(
                     vendor["id"], customer["id"], sender_wa_id,
                     f"Perfect, your order is confirmed. Please complete payment here: {checkout_url}"
                 )
-                return {"status": "order_confirmed", "order_id": pending_order["id"]}
+                return {"status": "order_pending_payment", "order_id": pending_order["id"]}
 
             elif action == "cancel":
                 cancel_order(pending_order["id"])

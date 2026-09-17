@@ -32,14 +32,22 @@ def process_webhook_charge_success(event_data: dict) -> None:
 
     payment = get_payment_by_reference(reference)
     if payment is None:
-        return  # unknown reference — log and ignore, don't error the webhook
+        print(f"PAYSTACK WEBHOOK: unknown reference '{reference}' — ignoring (no matching payment record)")
+        return
 
     if payment["status"] == "paid":
-        return  # idempotent no-op on retry
+        print(f"PAYSTACK WEBHOOK: reference '{reference}' already marked paid — idempotent no-op")
+        return
 
     expected_kobo = int(payment["amount"] * 100)
     if amount_kobo != expected_kobo or currency != payment["currency"]:
-        # mismatch — flag for review, do not mark paid
+        # Mismatch — do not mark paid. This is exactly the kind of thing that should never be
+        # silently swallowed: log loudly so it surfaces in observability until a review_queue
+        # path exists for payment-level issues (payments aren't tied to a message_id today).
+        print(
+            f"PAYSTACK WEBHOOK MISMATCH for payment {payment['id']} (order {payment['order_id']}): "
+            f"expected {expected_kobo} {payment['currency']}, got {amount_kobo} {currency} — NOT marking paid"
+        )
         return
 
     mark_payment_paid(payment["id"])

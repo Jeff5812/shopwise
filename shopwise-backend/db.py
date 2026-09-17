@@ -94,6 +94,13 @@ def confirm_order(order_id: str):
     return supabase.table("orders").update({"status": "confirmed"}).eq("id", order_id).execute().data[0]
 
 
+def mark_pending_payment(order_id: str):
+    """Order has been agreed to (customer said yes) but payment hasn't happened yet.
+    Only the Paystack webhook (process_webhook_charge_success -> confirm_order) should
+    move an order from here to 'confirmed'."""
+    return supabase.table("orders").update({"status": "pending_payment"}).eq("id", order_id).execute().data[0]
+
+
 def get_order(order_id: str):
     result = supabase.table("orders").select("*").eq("id", order_id).limit(1).execute()
     return result.data[0] if result.data else None
