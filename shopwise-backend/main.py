@@ -223,11 +223,18 @@ async def receive_message(request: Request):
 
             if not line_items or extraction_confidence < EXTRACTION_CONFIDENCE_THRESHOLD:
                 add_to_review_queue(logged_message["id"], reason="unparseable")
-                await reply_and_log(
-                    vendor["id"], customer["id"], sender_wa_id,
-                    "I want to make sure I get your order exactly right. Could you let me know which "
-                    "item(s) and how many? (something like '2 lavender candles' works perfectly)"
-                )
+                # If the model told us WHY it couldn't extract (e.g. multiple variants, nothing
+                # to disambiguate size/color), surface that instead of a generic reply — otherwise
+                # the customer has no idea what's actually being asked of them.
+                ambiguous_note = extraction.get("ambiguous_note") if "extraction" in locals() else None
+                if ambiguous_note:
+                    clarify_reply = f"{ambiguous_note} Could you clarify so I can get this exactly right?"
+                else:
+                    clarify_reply = (
+                        "I want to make sure I get your order exactly right. Could you let me know which "
+                        "item(s) and how many? (something like '2 lavender candles' works perfectly)"
+                    )
+                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, clarify_reply)
             else:
                 order = create_order(vendor["id"], customer["id"], line_items, logged_message["id"])
                 try:
