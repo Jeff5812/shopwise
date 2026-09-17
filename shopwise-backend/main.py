@@ -74,7 +74,10 @@ async def send_whatsapp_message(to: str, body: str):
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=payload)
-            print("Send response:", response.status_code, response.text)
+            if response.status_code >= 400:
+                print(f"WHATSAPP SEND FAILED ({response.status_code}) to {to}: {response.text}")
+            else:
+                print("Send response:", response.status_code, response.text)
             return response
     except httpx.HTTPError as e:
         print("WhatsApp send failed (network/HTTP error):", e)

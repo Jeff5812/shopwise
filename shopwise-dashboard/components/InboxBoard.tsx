@@ -5,21 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/Button';
 import { resolveReviewItem, ApiError } from '@/lib/api';
 
-function extractAiFields(raw: string) {
-  const lower = raw.toLowerCase();
-  const productMatch = raw.match(/([a-z0-9\s-]+?)(?:\s+for\s+|\s+please|\s+with|$)/i);
-  const qtyMatch = raw.match(/(\d+)\s*(?:pcs|pieces|qty|x)/i);
-  const sizeMatch = raw.match(/(xs|s|m|l|xl|xxl|medium|large|small|size\s*[:=]?\s*[a-z]+)/i);
-  const paymentMatch = raw.match(/(card|transfer|cash|bank|paystack|flutterwave|pos)/i);
-
-  return {
-    product: productMatch?.[1]?.trim() || 'Product',
-    qty: qtyMatch?.[1] || '1',
-    size: sizeMatch?.[1]?.trim() || 'M',
-    payment: paymentMatch?.[1]?.trim() || 'Cash on delivery',
-  };
-}
-
 export function InboxBoard({ conversations }: { conversations: any[] }) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(conversations[0]?.id || null);
@@ -58,8 +43,6 @@ export function InboxBoard({ conversations }: { conversations: any[] }) {
       </main>
     );
   }
-
-  const aiFields = extractAiFields(selectedConversation?.raw_text || 'Hi, please send 2 black M shirts and pay by transfer.');
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
@@ -125,28 +108,24 @@ export function InboxBoard({ conversations }: { conversations: any[] }) {
             </div>
 
             <div className="surface-card p-4">
-              <p className="text-sm font-semibold text-stone-900">AI understanding</p>
+              <p className="text-sm font-semibold text-stone-900">Status</p>
               <div className="mt-3 space-y-2 divide-y divide-stone-100">
                 <div className="flex items-center justify-between gap-3 py-2 text-sm text-stone-700">
-                  <span>Product</span>
-                  <span className="font-data text-stone-800">{aiFields.product}</span>
+                  <span>Escalated to review</span>
+                  <span className="font-data text-stone-800">{selectedConversation?.reviewItem ? 'Yes' : 'No'}</span>
                 </div>
-                <div className="flex items-center justify-between gap-3 py-2 text-sm text-stone-700">
-                  <span>Qty</span>
-                  <span className="font-data text-stone-800">{aiFields.qty}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 py-2 text-sm text-stone-700">
-                  <span>Size</span>
-                  <span className="font-data text-stone-800">{aiFields.size}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 py-2 text-sm text-stone-700">
-                  <span>Payment</span>
-                  <span className="font-data text-stone-800">{aiFields.payment}</span>
-                </div>
+                {selectedConversation?.reviewItem && (
+                  <div className="flex items-center justify-between gap-3 py-2 text-sm text-stone-700">
+                    <span>Reason</span>
+                    <span className="font-data text-stone-800">{selectedConversation.reviewItem.reason.replace(/_/g, ' ')}</span>
+                  </div>
+                )}
               </div>
-              <div className="mt-4">
-                <Button variant="secondary" className="h-10 px-4 text-sm">Create order</Button>
-              </div>
+              <p className="mt-4 text-xs text-stone-400">
+                A structured breakdown (product, quantity, price) isn't shown here yet — the AI's
+                extraction result isn't currently saved anywhere the dashboard can read it. Resolve
+                or reply to this conversation directly for now.
+              </p>
             </div>
           </div>
         </section>
