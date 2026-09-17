@@ -218,7 +218,9 @@ async def receive_message(request: Request):
         if intent == "order":
             try:
                 catalog = get_vendor_catalog(vendor["id"])
+                print(f"DEBUG catalog for vendor {vendor['id']}: {[p.get('name') for p in catalog]}")
                 extraction = extract_order(text, catalog, history)
+                print(f"DEBUG extraction result: {extraction}")
                 line_items = extraction["line_items"]
                 extraction_confidence = extraction["confidence"]
             except Exception as e:

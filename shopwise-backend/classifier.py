@@ -48,7 +48,7 @@ def _build_contents(text: str, history: list = None):
 
 def classify_message(text: str, history: list = None) -> dict:
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=_build_contents(text, history),
         config={
             "system_instruction": SYSTEM_PROMPT,

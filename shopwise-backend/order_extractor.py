@@ -62,7 +62,7 @@ def extract_order(text: str, catalog: list, history: list = None) -> dict:
     prompt = build_extraction_prompt(catalog)
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=_build_contents(text, history),
         config={
             "system_instruction": prompt,
