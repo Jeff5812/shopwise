@@ -2,6 +2,7 @@ import os
 import json
 from dotenv import load_dotenv
 from google import genai
+from model_router import generate_with_resilience
 
 load_dotenv()
 
@@ -47,8 +48,8 @@ def _build_contents(text: str, history: list = None):
 
 
 def classify_message(text: str, history: list = None) -> dict:
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
+    response, model_used = generate_with_resilience(
+        client,
         contents=_build_contents(text, history),
         config={
             "system_instruction": SYSTEM_PROMPT,
@@ -56,6 +57,7 @@ def classify_message(text: str, history: list = None) -> dict:
             "response_mime_type": "application/json",
         },
     )
+    print(f"classify_message served by {model_used}")
 
     raw = response.text.strip()
 

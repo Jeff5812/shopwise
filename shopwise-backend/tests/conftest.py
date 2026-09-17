@@ -47,6 +47,16 @@ def _fake_response(payload: dict):
     return resp
 
 
+@pytest.fixture(autouse=True)
+def _reset_circuit_breaker():
+    """Circuit breaker state lives at module level in model_router.py and would
+    otherwise leak between tests — reset it before every test runs."""
+    from model_router import reset_breaker_for_testing
+    reset_breaker_for_testing()
+    yield
+    reset_breaker_for_testing()
+
+
 @pytest.fixture
 def mock_classifier_client(monkeypatch):
     """Patch classifier.client.models.generate_content to return a canned payload.
