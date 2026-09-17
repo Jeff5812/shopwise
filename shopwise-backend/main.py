@@ -11,6 +11,8 @@ from db import (
     get_or_create_customer,
     message_already_processed,
     log_message,
+    log_outbound_message,
+    get_conversation_history,
     update_message_classification,
     add_to_review_queue,
     get_vendor_catalog,
@@ -76,6 +78,18 @@ async def send_whatsapp_message(to: str, body: str):
     except httpx.HTTPError as e:
         print("WhatsApp send failed (network/HTTP error):", e)
         return None
+
+
+async def reply_and_log(vendor_id: str, customer_id: str, to: str, body: str):
+    """Sends the WhatsApp reply and logs it as an outbound message, so the next turn's
+    conversation-history lookup sees what the bot actually said, not just the customer's side."""
+    result = await send_whatsapp_message(to, body)
+    try:
+        log_outbound_message(vendor_id, customer_id, body)
+    except Exception as e:
+        # Never let a logging failure block the reply that already went out
+        print("Failed to log outbound message:", e)
+    return result
 
 
 @app.get("/webhook")
@@ -149,8 +163,8 @@ async def receive_message(request: Request):
                 if not customer_email:
                     raise HTTPException(status_code=500, detail="customer email is required for payment")
                 checkout_url = await create_payment_for_order(pending_order["id"], customer_email)
-                await send_whatsapp_message(
-                    sender_wa_id,
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
                     f"Perfect, your order is confirmed. Please complete payment here: {checkout_url}"
                 )
                 return {"status": "order_confirmed", "order_id": pending_order["id"]}
@@ -158,7 +172,7 @@ async def receive_message(request: Request):
             elif action == "cancel":
                 cancel_order(pending_order["id"])
                 update_message_classification(logged_message["id"], "order", 1.0)
-                await send_whatsapp_message(sender_wa_id, "No problem at all, that order has been canceled.")
+                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "No problem at all, that order has been canceled.")
                 return {"status": "order_canceled", "order_id": pending_order["id"]}
 
             else:
@@ -167,16 +181,20 @@ async def receive_message(request: Request):
                 # Escalate rather than guess or silently create a second, conflicting order.
                 update_message_classification(logged_message["id"], "unclassified", 0.0)
                 add_to_review_queue(logged_message["id"], reason="unparseable")
-                await send_whatsapp_message(
-                    sender_wa_id,
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
                     "I still have your order waiting on a yes or no to confirm it. Let me know and I'll also "
                     "flag your message to the seller in case you'd like to change something."
                 )
                 return {"status": "escalated_pending_order_unclear", "order_id": pending_order["id"]}
 
+        # Fetch recent conversation history once here — both the intent classifier and the order
+        # extractor need it, since neither call was seeing anything beyond the current message before.
+        history = get_conversation_history(vendor["id"], customer["id"], exclude_message_id=logged_message["id"])
+
         # Classification can fail transiently (model overloaded, network blip) — never crash the webhook for it
         try:
-            classification = classify_message(text)
+            classification = classify_message(text, history)
             intent = classification["intent"]
             confidence = classification["confidence"]
         except Exception as e:
@@ -189,14 +207,14 @@ async def receive_message(request: Request):
         # Low confidence always escalates, regardless of what intent it guessed
         if confidence < CONFIDENCE_THRESHOLD or intent == "unclassified":
             add_to_review_queue(logged_message["id"], reason="low_confidence")
-            await send_whatsapp_message(sender_wa_id, "Thanks for reaching out. Let me just check on this and I'll come right back to you.")
+            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Thanks for reaching out. Let me just check on this and I'll come right back to you.")
             return {"status": "escalated_low_confidence"}
 
         # Branch by intent — negotiation logic is still a stub for now
         if intent == "order":
             try:
                 catalog = get_vendor_catalog(vendor["id"])
-                extraction = extract_order(text, catalog)
+                extraction = extract_order(text, catalog, history)
                 line_items = extraction["line_items"]
                 extraction_confidence = extraction["confidence"]
             except Exception as e:
@@ -205,8 +223,8 @@ async def receive_message(request: Request):
 
             if not line_items or extraction_confidence < EXTRACTION_CONFIDENCE_THRESHOLD:
                 add_to_review_queue(logged_message["id"], reason="unparseable")
-                await send_whatsapp_message(
-                    sender_wa_id,
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
                     "I want to make sure I get your order exactly right. Could you let me know which "
                     "item(s) and how many? (something like '2 lavender candles' works perfectly)"
                 )
@@ -218,7 +236,7 @@ async def receive_message(request: Request):
                     print("Confirmation generation failed, using plain fallback:", e)
                     items_text = ", ".join(f"{i['quantity']} x {i['product_name']}" for i in line_items)
                     reply_text = f"That's {items_text}, coming to \u20a6{order['total_amount']:.0f} total. Shall I confirm this for you?"
-                await send_whatsapp_message(sender_wa_id, reply_text)
+                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, reply_text)
         elif intent == "question":
             try:
                 faq_snippets = get_faq_snippets(vendor["id"])
@@ -228,15 +246,15 @@ async def receive_message(request: Request):
                 faq_result = {"answered": False, "reply": None}
 
             if faq_result["answered"] and faq_result["reply"]:
-                await send_whatsapp_message(sender_wa_id, faq_result["reply"])
+                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, faq_result["reply"])
             else:
                 add_to_review_queue(logged_message["id"], reason="unparseable")
-                await send_whatsapp_message(sender_wa_id, "Good question. Let me check with the seller and get right back to you.")
+                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Good question. Let me check with the seller and get right back to you.")
         elif intent == "negotiation":
             add_to_review_queue(logged_message["id"], reason="negotiation_below_floor")
-            await send_whatsapp_message(sender_wa_id, "I hear you. Let me see what I can work out on that and I'll get back to you shortly.")
+            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "I hear you. Let me see what I can work out on that and I'll get back to you shortly.")
         elif intent == "noise":
-            await send_whatsapp_message(sender_wa_id, "Hi there! Lovely to hear from you, what can I help you find today?")
+            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Hi there! Lovely to hear from you, what can I help you find today?")
 
         return {"status": "processed", "intent": intent, "confidence": confidence}
 

@@ -25,6 +25,10 @@ variant_id from the catalog above — never invent one. If a product has multipl
 color) and the customer didn't specify which one, pick the most likely one only if there's
 exactly one reasonable match; otherwise flag it as ambiguous.
 
+You may be shown earlier turns of this conversation for context — use them to resolve follow-ups
+like "just 2 of those" or "the blue one instead", referring back to what was discussed earlier.
+Extract the order implied by the LATEST customer message, read in light of that context.
+
 Respond ONLY with valid JSON in this exact shape:
 {{
   "line_items": [
@@ -40,12 +44,26 @@ confidence 0.0.
 """
 
 
-def extract_order(text: str, catalog: list) -> dict:
+def _build_contents(text: str, history: list = None):
+    if not history:
+        return text
+
+    contents = []
+    for message in history:
+        role = "user" if message.get("direction") == "inbound" else "model"
+        body = message.get("raw_text") or ""
+        if body:
+            contents.append({"role": role, "parts": [{"text": body}]})
+    contents.append({"role": "user", "parts": [{"text": text}]})
+    return contents
+
+
+def extract_order(text: str, catalog: list, history: list = None) -> dict:
     prompt = build_extraction_prompt(catalog)
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=text,
+        contents=_build_contents(text, history),
         config={
             "system_instruction": prompt,
             "temperature": 0,

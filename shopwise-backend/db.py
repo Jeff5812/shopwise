@@ -167,6 +167,38 @@ def adjust_stock(variant_id: str, new_quantity: int):
     return supabase.table("product_variants").update({"stock_quantity": new_quantity}).eq("id", variant_id).execute().data[0]
 
 
+def log_outbound_message(vendor_id: str, customer_id: str, raw_text: str):
+    """Logs the bot's own reply so future conversation-history lookups include both sides of
+    the exchange, not just the customer's messages. wa_message_id is null for our own sends."""
+    return supabase.table("messages").insert({
+        "vendor_id": vendor_id,
+        "customer_id": customer_id,
+        "wa_message_id": None,
+        "direction": "outbound",
+        "raw_text": raw_text,
+    }).execute()
+
+
+def get_conversation_history(vendor_id: str, customer_id: str, exclude_message_id: str = None, limit: int = 10):
+    """Last `limit` messages (both directions) for this customer, oldest first, ready to feed
+    to Gemini as multi-turn context. Excludes the message currently being processed, since that's
+    passed separately as the live turn."""
+    query = (
+        supabase.table("messages")
+        .select("id, direction, raw_text, created_at")
+        .eq("vendor_id", vendor_id)
+        .eq("customer_id", customer_id)
+        .order("created_at", desc=True)
+        .limit(limit + 1)  # +1 headroom in case the current message is already committed when this runs
+    )
+    result = query.execute().data or []
+
+    if exclude_message_id:
+        result = [m for m in result if m.get("id") != exclude_message_id]
+
+    return list(reversed(result[:limit]))
+
+
 def get_faq_snippets(vendor_id: str):
     """Returns the vendor's own FAQ/policy answers — the only source FAQ replies are allowed to draw from."""
     return supabase.table("faq_snippets").select("*").eq("vendor_id", vendor_id).execute().data
