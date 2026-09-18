@@ -16,6 +16,10 @@ Classify the message into exactly one of these intents:
 - "order": the customer is trying to buy something, specifying items and/or quantities
 - "question": the customer is asking about price, availability, delivery time, returns, or similar
 - "negotiation": the customer is trying to haggle or propose a different price
+- "cancel": the customer wants to cancel an order they already placed — "cancel my order",
+  "I don't want it anymore", "cancel the previous one", including when it's mentioned
+  alongside a new request (e.g. "cancel the last order, I want 2 candles instead" is "cancel" —
+  the new item comes through in their next message)
 - "noise": greetings, small talk, or anything not related to buying
 
 You may be shown earlier turns of this conversation for context. Classify only the customer's
@@ -23,7 +27,7 @@ LATEST message — use the earlier turns to resolve references like "that one" o
 not to reclassify something already handled.
 
 Respond ONLY with valid JSON in this exact shape, nothing else:
-{"intent": "order" | "question" | "negotiation" | "noise", "confidence": 0.0 to 1.0}
+{"intent": "order" | "question" | "negotiation" | "cancel" | "noise", "confidence": 0.0 to 1.0}
 
 confidence should reflect how certain you are. Use lower confidence (below 0.6) for ambiguous,
 incomplete, or unclear messages rather than guessing high.
@@ -65,7 +69,7 @@ def classify_message(text: str, history: list = None) -> dict:
         parsed = json.loads(raw)
         intent = parsed.get("intent", "unclassified")
         confidence = float(parsed.get("confidence", 0))
-        if intent not in ("order", "question", "negotiation", "noise"):
+        if intent not in ("order", "question", "negotiation", "cancel", "noise"):
             intent = "unclassified"
             confidence = 0.0
         return {"intent": intent, "confidence": confidence}

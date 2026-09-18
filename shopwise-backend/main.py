@@ -19,6 +19,7 @@ from db import (
     get_faq_snippets,
     create_order,
     get_pending_order,
+    get_cancellable_order,
     get_order,
     get_customer,
     mark_pending_payment,
@@ -338,6 +339,43 @@ async def receive_message(request: Request):
         elif intent == "negotiation":
             add_to_review_queue(logged_message["id"], reason="negotiation_below_floor")
             await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "I hear you. Let me see what I can work out on that and I'll get back to you shortly.")
+        elif intent == "cancel":
+            cancellable_order = None
+            try:
+                cancellable_order = get_cancellable_order(vendor["id"], customer["id"])
+            except Exception as e:
+                print("get_cancellable_order failed:", e)
+
+            if not cancellable_order:
+                # Nothing unpaid to cancel — either there's no order at all, or they're asking
+                # about a confirmed/paid one, which needs a refund conversation with the seller,
+                # not a silent auto-cancel.
+                add_to_review_queue(logged_message["id"], reason="cancel_no_matching_order")
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
+                    "I don't see an active unpaid order to cancel — if you already paid, let me "
+                    "flag the seller to help with that instead."
+                )
+            else:
+                try:
+                    cancel_order(cancellable_order["id"])
+                except Exception as e:
+                    print("cancel_order failed:", e)
+                    add_to_review_queue(logged_message["id"], reason="cancel_failed")
+                    await reply_and_log(
+                        vendor["id"], customer["id"], sender_wa_id,
+                        "I hit a snag cancelling that — I've flagged it for the seller to sort out."
+                    )
+                else:
+                    # Deliberate scope decision: if "cancel the last one, I want X instead" came in
+                    # as one message, only the cancel is handled here. The new item isn't extracted
+                    # from the same message — ask for it as a separate, unambiguous follow-up rather
+                    # than guessing at two intents out of one message.
+                    await reply_and_log(
+                        vendor["id"], customer["id"], sender_wa_id,
+                        "Done, that order's been cancelled. Let me know if you'd like to order "
+                        "something else."
+                    )
         elif intent == "noise":
             await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Hi there! Lovely to hear from you, what can I help you find today?")
 

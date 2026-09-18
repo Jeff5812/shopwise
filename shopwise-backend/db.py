@@ -90,6 +90,25 @@ def get_pending_order(vendor_id: str, customer_id: str, max_age_minutes: int = 3
     return result.data[0] if result.data else None
 
 
+def get_cancellable_order(vendor_id: str, customer_id: str):
+    """Most recent order that can still be cancelled outside the narrow yes/no confirmation
+    window — anything not yet paid (awaiting_confirmation or pending_payment). No age cutoff
+    like get_pending_order: a "cancel my order" request is deliberate and can arrive well after
+    the 30-minute confirmation window closes. A confirmed (paid) order is not cancellable here —
+    that needs a refund flow, which doesn't exist yet."""
+    result = (
+        supabase.table("orders")
+        .select("*")
+        .eq("vendor_id", vendor_id)
+        .eq("customer_id", customer_id)
+        .in_("status", ["awaiting_confirmation", "pending_payment"])
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
 def confirm_order(order_id: str):
     return supabase.table("orders").update({"status": "confirmed"}).eq("id", order_id).execute().data[0]
 
