@@ -152,7 +152,13 @@ async def receive_message(request: Request):
         # Pending confirmation check comes BEFORE the general intent classifier.
         # If this customer has an order sitting at awaiting_confirmation, their reply is
         # almost certainly answering that, not starting something new, so it gets checked first.
-        pending_order = get_pending_order(vendor["id"], customer["id"])
+        # Guarded like every other external call in this handler — a transient Supabase error
+        # here must not crash the whole webhook and strand the message at intent=null forever.
+        try:
+            pending_order = get_pending_order(vendor["id"], customer["id"])
+        except Exception as e:
+            print("get_pending_order failed, treating as no pending order:", e)
+            pending_order = None
         if pending_order:
             try:
                 action = classify_pending_response(text)
