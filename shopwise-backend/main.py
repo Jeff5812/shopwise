@@ -168,7 +168,28 @@ async def receive_message(request: Request):
                 action = "other"
 
             if action == "confirm":
-                mark_pending_payment(pending_order["id"])
+                try:
+                    mark_pending_payment(pending_order["id"])
+                except Exception as e:
+                    # This was the missing guard. mark_pending_payment() was the one remaining
+                    # unguarded external call in this whole branch — a transient Supabase blip
+                    # here crashes straight through to a raw 500 with zero reply, and critically
+                    # leaves the order stuck at 'awaiting_confirmation' (never even reaches
+                    # pending_payment). That means get_pending_order() keeps matching it on every
+                    # later message, so classify_pending_response correctly says "other" for
+                    # "Where do I pay?" and the customer just keeps hearing "still waiting on a
+                    # yes or no" to a question they already answered. Live evidence: "Yeah Confirm"
+                    # got no reply at all, then two later unrelated messages both got the exact
+                    # same canned escalation reply — only possible if the order never left
+                    # awaiting_confirmation in the first place.
+                    print("mark_pending_payment failed:", e)
+                    add_to_review_queue(logged_message["id"], reason="confirm_failed")
+                    await reply_and_log(
+                        vendor["id"], customer["id"], sender_wa_id,
+                        "I hit a snag confirming that — could you try replying 'confirm' one more time? "
+                        "If it still doesn't go through I'll make sure the seller sees it."
+                    )
+                    return {"status": "confirm_failed", "order_id": pending_order["id"]}
                 update_message_classification(logged_message["id"], "order", 1.0)
                 customer_email = customer.get("email") or PAYSTACK_DEFAULT_EMAIL
                 if not customer_email:
@@ -207,7 +228,16 @@ async def receive_message(request: Request):
                 return {"status": "order_pending_payment", "order_id": pending_order["id"]}
 
             elif action == "cancel":
-                cancel_order(pending_order["id"])
+                try:
+                    cancel_order(pending_order["id"])
+                except Exception as e:
+                    print("cancel_order failed:", e)
+                    add_to_review_queue(logged_message["id"], reason="cancel_failed")
+                    await reply_and_log(
+                        vendor["id"], customer["id"], sender_wa_id,
+                        "I hit a snag cancelling that — I've flagged it for the seller to sort out."
+                    )
+                    return {"status": "cancel_failed", "order_id": pending_order["id"]}
                 update_message_classification(logged_message["id"], "order", 1.0)
                 await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "No problem at all, that order has been canceled.")
                 return {"status": "order_canceled", "order_id": pending_order["id"]}
@@ -216,8 +246,11 @@ async def receive_message(request: Request):
                 # Deliberate scope decision: corrections ("actually make it 3") are not auto-handled
                 # yet, since that means editing an already-created order and its stock reservation.
                 # Escalate rather than guess or silently create a second, conflicting order.
-                update_message_classification(logged_message["id"], "unclassified", 0.0)
-                add_to_review_queue(logged_message["id"], reason="unparseable")
+                try:
+                    update_message_classification(logged_message["id"], "unclassified", 0.0)
+                    add_to_review_queue(logged_message["id"], reason="unparseable")
+                except Exception as e:
+                    print("Escalation bookkeeping failed (still replying to the customer):", e)
                 await reply_and_log(
                     vendor["id"], customer["id"], sender_wa_id,
                     "I still have your order waiting on a yes or no to confirm it. Let me know and I'll also "
