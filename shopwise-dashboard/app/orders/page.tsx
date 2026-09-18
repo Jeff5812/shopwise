@@ -21,6 +21,27 @@ async function getOrdersWithDetails(vendorId: string) {
 
   if (!orders) return [];
 
+  // Payment truth lives in the `payments` table, not on `orders` — there is no
+  // orders.payment_status/payment_method column, so reading those (as this used
+  // to) always returns undefined and the Payment badge showed "Unpaid" for
+  // every order regardless of what actually happened with Paystack. Fetch the
+  // payment rows for these orders in one query and take the most recent per
+  // order (an order can have more than one payment attempt if a link failed
+  // and was regenerated).
+  const orderIds = orders.map((o: any) => o.id);
+  const { data: payments } = await supabase
+    .from('payments')
+    .select('order_id, status, created_at')
+    .in('order_id', orderIds)
+    .order('created_at', { ascending: false });
+
+  const latestPaymentByOrder = new Map<string, string>();
+  for (const payment of payments ?? []) {
+    if (!latestPaymentByOrder.has(payment.order_id)) {
+      latestPaymentByOrder.set(payment.order_id, payment.status);
+    }
+  }
+
   const withItems = await Promise.all(
     orders.map(async (order: any) => {
       const { data: items } = await supabase
@@ -54,6 +75,7 @@ async function getOrdersWithDetails(vendorId: string) {
         itemsSummary: itemLabels.join(', '),
         subtotal_amount: itemRows.reduce((sum, item) => sum + item.quantity * item.unit_price, 0),
         raw_message: order.notes || order.raw_message || '',
+        payment_status: latestPaymentByOrder.get(order.id) ?? null,
       };
     })
   );

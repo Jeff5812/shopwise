@@ -18,12 +18,28 @@ async function getRangeOrders(vendorId: string, days: number) {
 
   const { data: orders } = await supabase
     .from('orders')
-    .select('id, total_amount, created_at, customer_id, customers(display_name, wa_id)')
+    .select('id, status, total_amount, created_at, customer_id, customers(display_name, wa_id)')
     .eq('vendor_id', vendorId)
     .gte('created_at', start.toISOString())
     .order('created_at', { ascending: true });
 
-  return dataOrEmpty(orders);
+  const allOrders = dataOrEmpty<any[]>(orders);
+  if (allOrders.length === 0) return allOrders;
+
+  // Revenue must mean money actually received, not gross order value — an order
+  // sitting at awaiting_confirmation/pending_payment/confirmed-with-no-payment
+  // has no money behind it yet, and a cancelled order never will. Payment truth
+  // lives on the `payments` table (same fix as the Orders page's Payment
+  // column), so join it here rather than trusting orders.status alone.
+  const orderIds = allOrders.map((o: any) => o.id);
+  const { data: payments } = await supabase
+    .from('payments')
+    .select('order_id, status')
+    .in('order_id', orderIds)
+    .eq('status', 'paid');
+
+  const paidOrderIds = new Set((payments ?? []).map((p: any) => p.order_id));
+  return allOrders.map((order: any) => ({ ...order, is_paid: paidOrderIds.has(order.id) }));
 }
 
 function dataOrEmpty<T>(data: T | null | undefined): T {
@@ -55,13 +71,18 @@ function buildSalesSeries(orders: any[], days: number) {
 
 async function getAnalytics(vendorId: string, days: number) {
   const orders = dataOrEmpty<any[]>(await getRangeOrders(vendorId, days));
-  const revenue = orders.reduce((sum: number, order: any) => sum + Number(order.total_amount || 0), 0);
+  // Revenue/profit/top-products/top-customers/sales-series all reflect money
+  // actually received — paid orders only. The "Orders" count below stays as
+  // total order volume (including unpaid/cancelled) since that's a genuinely
+  // different, still-useful metric, not a revenue figure.
+  const paidOrders = orders.filter((order: any) => order.is_paid);
+  const revenue = paidOrders.reduce((sum: number, order: any) => sum + Number(order.total_amount || 0), 0);
   const profit = 0;
 
   const productMap = new Map<string, number>();
   const customerMap = new Map<string, number>();
 
-  for (const order of orders) {
+  for (const order of paidOrders) {
     const customerName = (order as any).customers?.display_name || (order as any).customers?.wa_id || 'Customer';
     customerMap.set(customerName, (customerMap.get(customerName) || 0) + Number((order as any).total_amount || 0));
 
@@ -87,8 +108,8 @@ async function getAnalytics(vendorId: string, days: number) {
     revenue,
     orders: orders.length,
     profit,
-    aov: orders.length ? revenue / orders.length : 0,
-    salesSeries: buildSalesSeries(orders, days),
+    aov: paidOrders.length ? revenue / paidOrders.length : 0,
+    salesSeries: buildSalesSeries(paidOrders, days),
     topProducts,
     topCustomers,
   };

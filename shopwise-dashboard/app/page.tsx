@@ -21,6 +21,22 @@ async function getOrdersInRange(vendorId: string, start: Date, end: Date) {
   return data ?? [];
 }
 
+async function getPaidOrderIds(orderIds: string[]): Promise<Set<string>> {
+  // Revenue/profit must reflect orders that were actually paid for, per the
+  // `payments` table — not orders.status alone. Historical rows created before
+  // the payment state-machine fix can sit at status='confirmed' with no
+  // payment ever made (the dashboard's old Confirm button used to do this
+  // directly), so status='confirmed' is not a safe stand-in for "paid" on its
+  // own; the payments join is the source of truth either way.
+  if (orderIds.length === 0) return new Set();
+  const { data: payments } = await supabase
+    .from('payments')
+    .select('order_id')
+    .in('order_id', orderIds)
+    .eq('status', 'paid');
+  return new Set((payments ?? []).map((p: any) => p.order_id));
+}
+
 async function getTodayOrders(vendorId: string) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
@@ -57,11 +73,15 @@ async function getLowStockCount(vendorId: string) {
 }
 
 async function getPendingPaymentCount(vendorId: string) {
+  // Was querying status='confirmed' and calling it "pending payments" — the
+  // inverse of what confirmed now means since the payment state-machine fix
+  // (confirmed only happens after real payment, via the Paystack webhook).
+  // The actual "waiting on payment" status is pending_payment.
   const { count } = await supabase
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('vendor_id', vendorId)
-    .eq('status', 'confirmed');
+    .eq('status', 'pending_payment');
   return count ?? 0;
 }
 
@@ -84,7 +104,9 @@ async function getWeeklyProfitTrend(vendorId: string) {
   }
 
   if (orders?.length) {
+    const paidIds = await getPaidOrderIds(orders.map((o) => o.id));
     for (const order of orders) {
+      if (!paidIds.has(order.id)) continue;
       const { data: items } = await supabase
         .from('order_items')
         .select('quantity, unit_price, product_variants(product_id)')
@@ -128,12 +150,17 @@ export default async function HomePage() {
 
   const vendorName = vendor.business_name || vendor.name || vendor.display_name || 'there';
   const todayOrders = await getTodayOrders(vendor.id);
-  const todaySales = todayOrders.reduce((sum: number, order: any) => sum + Number(order.total_amount || 0), 0);
-  const todayProfit = await getProfitForOrders(todayOrders.map((o) => o.id));
+  const todayPaidIds = await getPaidOrderIds(todayOrders.map((o: any) => o.id));
+  const todayPaidOrders = todayOrders.filter((o: any) => todayPaidIds.has(o.id));
+  const todaySales = todayPaidOrders.reduce((sum: number, order: any) => sum + Number(order.total_amount || 0), 0);
+  const todayProfit = await getProfitForOrders(todayPaidOrders.map((o: any) => o.id));
   const lowStockCount = await getLowStockCount(vendor.id);
   const pendingPaymentCount = await getPendingPaymentCount(vendor.id);
-  const completedOrders = todayOrders.filter((order: any) => ['paid', 'delivered', 'completed'].includes(order.status)).length;
-  const pendingOrders = todayOrders.filter((order: any) => !['paid', 'delivered', 'completed', 'canceled', 'cancelled'].includes(order.status)).length;
+  // Real order.status values written by the backend are only: awaiting_confirmation,
+  // pending_payment, confirmed, canceled — 'paid'/'delivered'/'completed' are never
+  // actually set, so the old filters against those never matched anything.
+  const completedOrders = todayOrders.filter((order: any) => order.status === 'confirmed').length;
+  const pendingOrders = todayOrders.filter((order: any) => ['awaiting_confirmation', 'pending_payment'].includes(order.status)).length;
 
   const yesterdayStart = new Date();
   yesterdayStart.setDate(yesterdayStart.getDate() - 1);
@@ -142,7 +169,10 @@ export default async function HomePage() {
   yesterdayEnd.setDate(yesterdayEnd.getDate() - 1);
   yesterdayEnd.setHours(23, 59, 59, 999);
   const yesterdayOrders = await getOrdersInRange(vendor.id, yesterdayStart, yesterdayEnd);
-  const yesterdaySales = yesterdayOrders.reduce((sum: number, order: any) => sum + Number(order.total_amount || 0), 0);
+  const yesterdayPaidIds = await getPaidOrderIds(yesterdayOrders.map((o: any) => o.id));
+  const yesterdaySales = yesterdayOrders
+    .filter((o: any) => yesterdayPaidIds.has(o.id))
+    .reduce((sum: number, order: any) => sum + Number(order.total_amount || 0), 0);
   const salesDelta = yesterdaySales > 0 ? ((todaySales - yesterdaySales) / yesterdaySales) * 100 : null;
   const lowStockDelta = null;
   const pendingPaymentsDelta = null;

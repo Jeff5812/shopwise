@@ -19,10 +19,10 @@ function normalizeStatus(status: string | null | undefined) {
 
 function normalizePayment(value: string | null | undefined) {
   const val = (value || '').toLowerCase();
-  if (!val) return 'unpaid';
+  if (!val || val === 'pending') return 'unpaid';
   if (['paid', 'completed'].includes(val)) return 'paid';
   if (['cod', 'cash_on_delivery'].includes(val)) return 'processing';
-  return val;
+  return val; // failed / cancelled / refunded shown as-is
 }
 
 function formatMoney(value: number | string | null | undefined) {
@@ -186,7 +186,7 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
         ) : (
           <div>
             {pageItems.map((order) => {
-              const paymentStatus = normalizePayment(order.payment_status || order.payment_method);
+              const paymentStatus = normalizePayment(order.payment_status);
               const status = normalizeStatus(order.status);
               return (
                 <div
@@ -254,7 +254,7 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Badge status={normalizePayment(selectedOrder.payment_status || selectedOrder.payment_method)} />
+                <Badge status={normalizePayment(selectedOrder.payment_status)} />
                 <Badge status={normalizeStatus(selectedOrder.status)} />
               </div>
 
