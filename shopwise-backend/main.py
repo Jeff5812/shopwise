@@ -19,7 +19,8 @@ from db import (
     get_faq_snippets,
     create_order,
     get_pending_order,
-    confirm_order,
+    get_order,
+    get_customer,
     mark_pending_payment,
     cancel_order,
     get_order_items_with_names,
@@ -321,11 +322,49 @@ class StockUpdate(BaseModel):
 
 @app.post("/orders/{order_id}/confirm")
 async def confirm_order_endpoint(order_id: str):
-    try:
-        order = confirm_order(order_id)
-        return {"status": "confirmed", "order": order}
-    except IndexError:
+    """Seller confirming from the dashboard. Must share the exact same payment
+    path as the WhatsApp 'yes' flow — order goes to pending_payment, not straight
+    to confirmed, and the customer gets a real Paystack checkout link. Previously
+    this called confirm_order() directly, which skipped payment creation entirely
+    and left orders sitting at 'confirmed' with no payment_link, paid_at, or any
+    way for the customer to actually pay."""
+    order = get_order(order_id)
+    if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    customer = get_customer(order["customer_id"])
+    customer_email = (customer.get("email") if customer else None) or PAYSTACK_DEFAULT_EMAIL
+
+    mark_pending_payment(order_id)
+
+    if not customer_email:
+        # No add_to_review_queue here (unlike the WhatsApp path) — orders have no
+        # message_id to attach to, and review_queue.message_id is a required FK.
+        # The seller is looking straight at this order in the dashboard already,
+        # so surfacing the missing-email reason in the response is enough.
+        return {
+            "status": "order_pending_payment_missing_email",
+            "order_id": order_id,
+            "detail": "Order marked pending_payment. Customer has no email on file — "
+                       "ask them for one before a payment link can be generated.",
+        }
+
+    try:
+        checkout_url = await create_payment_for_order(order_id, customer_email)
+    except Exception as e:
+        print("create_payment_for_order failed:", e)
+        raise HTTPException(status_code=502, detail="Order marked pending_payment, but payment link generation failed")
+
+    if customer and customer.get("wa_id"):
+        try:
+            await reply_and_log(
+                order["vendor_id"], order["customer_id"], customer["wa_id"],
+                f"Your order is confirmed! Please complete payment here: {checkout_url}"
+            )
+        except Exception as e:
+            print("Failed to notify customer of payment link via WhatsApp:", e)
+
+    return {"status": "order_pending_payment", "order_id": order_id, "checkout_url": checkout_url}
 
 
 @app.post("/orders/{order_id}/cancel")

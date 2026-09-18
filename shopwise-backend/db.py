@@ -106,6 +106,11 @@ def get_order(order_id: str):
     return result.data[0] if result.data else None
 
 
+def get_customer(customer_id: str):
+    result = supabase.table("customers").select("*").eq("id", customer_id).limit(1).execute()
+    return result.data[0] if result.data else None
+
+
 def create_payment_record(order_id, provider, provider_reference, amount, currency, status):
     return supabase.table("payments").insert({
         "order_id": order_id,
