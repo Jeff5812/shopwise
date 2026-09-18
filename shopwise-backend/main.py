@@ -181,7 +181,25 @@ async def receive_message(request: Request):
                         "Your order is confirmed! I just need an email address to send your payment link — could you share one?"
                     )
                     return {"status": "order_pending_payment_missing_email", "order_id": pending_order["id"]}
-                checkout_url = await create_payment_for_order(pending_order["id"], customer_email)
+                checkout_url = None
+                try:
+                    checkout_url = await create_payment_for_order(pending_order["id"], customer_email)
+                except Exception as e:
+                    # Seen live: httpx.ConnectError to Paystack crashed straight through this call
+                    # (WinError 10054), returned a raw 500, and left the customer's "Confirm" with
+                    # no reply at all — order was already pending_payment so nothing was lost, but
+                    # the customer had no idea anything happened. Guard it like every other external
+                    # call in this handler, keep the order at pending_payment, tell the customer
+                    # honestly, and flag it so the seller can follow up if the retry inside
+                    # PaystackService also failed.
+                    print("create_payment_for_order failed after retry:", e)
+                    add_to_review_queue(logged_message["id"], reason="payment_link_generation_failed")
+                    await reply_and_log(
+                        vendor["id"], customer["id"], sender_wa_id,
+                        "Your order is confirmed! I'm having a little trouble generating your payment link "
+                        "right now — give me a moment and I'll send it shortly, or the seller will follow up."
+                    )
+                    return {"status": "order_pending_payment_link_failed", "order_id": pending_order["id"]}
                 await reply_and_log(
                     vendor["id"], customer["id"], sender_wa_id,
                     f"Perfect, your order is confirmed. Please complete payment here: {checkout_url}"
