@@ -29,6 +29,9 @@ from db import (
     get_review_queue,
     resolve_review_queue,
     adjust_stock,
+    set_customer_email,
+    set_order_awaiting_email,
+    get_order_awaiting_email,
 )
 from classifier import classify_message
 from order_extractor import extract_order, EXTRACTION_CONFIDENCE_THRESHOLD
@@ -36,6 +39,7 @@ from reply_generator import generate_order_confirmation, generate_faq_answer
 from pending_response_classifier import classify_pending_response
 from paystack_service import PaystackService
 from payment_service import create_payment_for_order, process_webhook_charge_success
+from email_capture import extract_email, looks_like_cancel, EMAIL_REQUEST, EMAIL_REQUEST_RETRY
 
 load_dotenv()
 
@@ -111,6 +115,29 @@ async def verify_webhook(request: Request):
     return PlainTextResponse(content="Forbidden", status_code=403)
 
 
+async def issue_payment_link(vendor_id, customer_id, wa_id, order_id, email, message_id, intro):
+    """Create the Paystack checkout for an order and send it to the customer. Single home for
+    the guarded payment-link step so the 'customer said yes' path and the 'customer just gave
+    us their email' path behave identically. On failure the order stays pending_payment, the
+    seller is flagged, and the customer gets an honest message instead of silence."""
+    try:
+        checkout_url = await create_payment_for_order(order_id, email)
+    except Exception as e:
+        print("create_payment_for_order failed after retry:", e)
+        try:
+            add_to_review_queue(message_id, reason="payment_link_generation_failed")
+        except Exception as e2:
+            print("review_queue bookkeeping failed:", e2)
+        await reply_and_log(
+            vendor_id, customer_id, wa_id,
+            "Your order is confirmed! I'm having a little trouble generating your payment link "
+            "right now — give me a moment and I'll send it shortly, or the seller will follow up."
+        )
+        return {"status": "order_pending_payment_link_failed", "order_id": order_id}
+    await reply_and_log(vendor_id, customer_id, wa_id, f"{intro} {checkout_url}")
+    return {"status": "order_pending_payment", "order_id": order_id}
+
+
 @app.post("/webhook")
 async def receive_message(request: Request):
     body = await request.json()
@@ -151,6 +178,37 @@ async def receive_message(request: Request):
             intent=None,
             confidence=None,
         )
+
+        # Email capture: we asked this customer for an email when generating their payment link.
+        # Their next message answers that. Never blocks the order: no email in the reply (or a
+        # 'skip') just falls back to the default Paystack email. A cancellation is the one thing
+        # that must NOT be swallowed here, so it falls through to the normal pipeline.
+        try:
+            awaiting_order = get_order_awaiting_email(vendor["id"], customer["id"])
+        except Exception as e:
+            print("get_order_awaiting_email failed, treating as none:", e)
+            awaiting_order = None
+        if awaiting_order and not looks_like_cancel(text):
+            provided = extract_email(text)
+            if provided:
+                try:
+                    set_customer_email(customer["id"], provided)
+                except Exception as e:
+                    print("set_customer_email failed (using it for this payment anyway):", e)
+            email = provided or customer.get("email") or PAYSTACK_DEFAULT_EMAIL
+            if not email:
+                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, EMAIL_REQUEST_RETRY)
+                return {"status": "awaiting_customer_email", "order_id": awaiting_order["id"]}
+            try:
+                set_order_awaiting_email(awaiting_order["id"], False)
+                update_message_classification(logged_message["id"], "order", 1.0)
+            except Exception as e:
+                print("email-capture bookkeeping failed:", e)
+            intro = "Thanks! Here's your payment link:" if provided else "No problem, here's your payment link:"
+            return await issue_payment_link(
+                vendor["id"], customer["id"], sender_wa_id, awaiting_order["id"],
+                email, logged_message["id"], intro,
+            )
 
         # Pending confirmation check comes BEFORE the general intent classifier.
         # If this customer has an order sitting at awaiting_confirmation, their reply is
@@ -193,41 +251,34 @@ async def receive_message(request: Request):
                     )
                     return {"status": "confirm_failed", "order_id": pending_order["id"]}
                 update_message_classification(logged_message["id"], "order", 1.0)
-                customer_email = customer.get("email") or PAYSTACK_DEFAULT_EMAIL
+                customer_email = customer.get("email")
                 if not customer_email:
-                    # Order stays correctly at pending_payment — don't crash the webhook with
-                    # a raw 500 (that leaves WhatsApp with no reply at all). Ask for what we
-                    # need and let the seller see it, same as any other unresolvable case.
+                    # No email on file: ask for it now, only because we're about to generate the
+                    # payment link. If we can't even record that we asked, don't block the
+                    # customer — fall back to the default email below.
+                    try:
+                        set_order_awaiting_email(pending_order["id"], True)
+                        await reply_and_log(vendor["id"], customer["id"], sender_wa_id, EMAIL_REQUEST)
+                        return {"status": "awaiting_customer_email", "order_id": pending_order["id"]}
+                    except Exception as e:
+                        print("Could not ask for email, using default fallback:", e)
+                        try:
+                            set_order_awaiting_email(pending_order["id"], False)
+                        except Exception:
+                            pass
+                customer_email = customer_email or PAYSTACK_DEFAULT_EMAIL
+                if not customer_email:
                     add_to_review_queue(logged_message["id"], reason="missing_email_for_payment")
                     await reply_and_log(
                         vendor["id"], customer["id"], sender_wa_id,
                         "Your order is confirmed! I just need an email address to send your payment link — could you share one?"
                     )
                     return {"status": "order_pending_payment_missing_email", "order_id": pending_order["id"]}
-                checkout_url = None
-                try:
-                    checkout_url = await create_payment_for_order(pending_order["id"], customer_email)
-                except Exception as e:
-                    # Seen live: httpx.ConnectError to Paystack crashed straight through this call
-                    # (WinError 10054), returned a raw 500, and left the customer's "Confirm" with
-                    # no reply at all — order was already pending_payment so nothing was lost, but
-                    # the customer had no idea anything happened. Guard it like every other external
-                    # call in this handler, keep the order at pending_payment, tell the customer
-                    # honestly, and flag it so the seller can follow up if the retry inside
-                    # PaystackService also failed.
-                    print("create_payment_for_order failed after retry:", e)
-                    add_to_review_queue(logged_message["id"], reason="payment_link_generation_failed")
-                    await reply_and_log(
-                        vendor["id"], customer["id"], sender_wa_id,
-                        "Your order is confirmed! I'm having a little trouble generating your payment link "
-                        "right now — give me a moment and I'll send it shortly, or the seller will follow up."
-                    )
-                    return {"status": "order_pending_payment_link_failed", "order_id": pending_order["id"]}
-                await reply_and_log(
-                    vendor["id"], customer["id"], sender_wa_id,
-                    f"Perfect, your order is confirmed. Please complete payment here: {checkout_url}"
+                return await issue_payment_link(
+                    vendor["id"], customer["id"], sender_wa_id, pending_order["id"],
+                    customer_email, logged_message["id"],
+                    "Perfect, your order is confirmed. Please complete payment here:",
                 )
-                return {"status": "order_pending_payment", "order_id": pending_order["id"]}
 
             elif action == "cancel":
                 try:
@@ -460,9 +511,23 @@ async def confirm_order_endpoint(order_id: str):
         raise HTTPException(status_code=404, detail="Order not found")
 
     customer = get_customer(order["customer_id"])
-    customer_email = (customer.get("email") if customer else None) or PAYSTACK_DEFAULT_EMAIL
+    customer_email = customer.get("email") if customer else None
 
     mark_pending_payment(order_id)
+
+    if not customer_email and customer and customer.get("wa_id"):
+        # Same rule as the WhatsApp path: ask for an email only now that a payment link is needed.
+        try:
+            set_order_awaiting_email(order_id, True)
+            await reply_and_log(order["vendor_id"], order["customer_id"], customer["wa_id"], EMAIL_REQUEST)
+            return {"status": "awaiting_customer_email", "order_id": order_id}
+        except Exception as e:
+            print("Could not ask customer for email, using default fallback:", e)
+            try:
+                set_order_awaiting_email(order_id, False)
+            except Exception:
+                pass
+    customer_email = customer_email or PAYSTACK_DEFAULT_EMAIL
 
     if not customer_email:
         # No add_to_review_queue here (unlike the WhatsApp path) — orders have no
