@@ -130,6 +130,30 @@ def get_customer(customer_id: str):
     return result.data[0] if result.data else None
 
 
+def set_customer_email(customer_id: str, email: str):
+    return supabase.table("customers").update({"email": email}).eq("id", customer_id).execute()
+
+
+def set_order_awaiting_email(order_id: str, awaiting: bool):
+    return supabase.table("orders").update({"awaiting_email": awaiting}).eq("id", order_id).execute()
+
+
+def get_order_awaiting_email(vendor_id: str, customer_id: str):
+    """Most recent order where we've asked this customer for an email and are waiting on the reply."""
+    result = (
+        supabase.table("orders")
+        .select("*")
+        .eq("vendor_id", vendor_id)
+        .eq("customer_id", customer_id)
+        .eq("status", "pending_payment")
+        .eq("awaiting_email", True)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
 def create_payment_record(order_id, provider, provider_reference, amount, currency, status):
     return supabase.table("payments").insert({
         "order_id": order_id,
