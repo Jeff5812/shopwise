@@ -131,7 +131,7 @@ async def issue_payment_link(vendor_id, customer_id, wa_id, order_id, email, mes
         await reply_and_log(
             vendor_id, customer_id, wa_id,
             "Your order is confirmed! I'm having a little trouble generating your payment link "
-            "right now — give me a moment and I'll send it shortly, or the seller will follow up."
+            "right now. Give me a moment and I'll send it shortly, or the seller will follow up."
         )
         return {"status": "order_pending_payment_link_failed", "order_id": order_id}
     await reply_and_log(vendor_id, customer_id, wa_id, f"{intro} {checkout_url}")
@@ -246,8 +246,8 @@ async def receive_message(request: Request):
                     add_to_review_queue(logged_message["id"], reason="confirm_failed")
                     await reply_and_log(
                         vendor["id"], customer["id"], sender_wa_id,
-                        "I hit a snag confirming that — could you try replying 'confirm' one more time? "
-                        "If it still doesn't go through I'll make sure the seller sees it."
+                        "I hit a snag confirming that. Could you try replying 'confirm' one more time? "
+                        "If it still doesn't go through, I'll make sure the seller sees it."
                     )
                     return {"status": "confirm_failed", "order_id": pending_order["id"]}
                 update_message_classification(logged_message["id"], "order", 1.0)
@@ -271,7 +271,7 @@ async def receive_message(request: Request):
                     add_to_review_queue(logged_message["id"], reason="missing_email_for_payment")
                     await reply_and_log(
                         vendor["id"], customer["id"], sender_wa_id,
-                        "Your order is confirmed! I just need an email address to send your payment link — could you share one?"
+                        "Your order is confirmed! I just need an email address to send your payment link. Could you share one?"
                     )
                     return {"status": "order_pending_payment_missing_email", "order_id": pending_order["id"]}
                 return await issue_payment_link(
@@ -288,7 +288,7 @@ async def receive_message(request: Request):
                     add_to_review_queue(logged_message["id"], reason="cancel_failed")
                     await reply_and_log(
                         vendor["id"], customer["id"], sender_wa_id,
-                        "I hit a snag cancelling that — I've flagged it for the seller to sort out."
+                        "I hit a snag cancelling that. I've flagged it for the seller to sort out."
                     )
                     return {"status": "cancel_failed", "order_id": pending_order["id"]}
                 update_message_classification(logged_message["id"], "order", 1.0)
@@ -306,8 +306,8 @@ async def receive_message(request: Request):
                     print("Escalation bookkeeping failed (still replying to the customer):", e)
                 await reply_and_log(
                     vendor["id"], customer["id"], sender_wa_id,
-                    "I still have your order waiting on a yes or no to confirm it. Let me know and I'll also "
-                    "flag your message to the seller in case you'd like to change something."
+                    "I still need a yes or no to confirm your order. Let me know, and I'll flag your "
+                    "message to the seller too in case you'd like to change something."
                 )
                 return {"status": "escalated_pending_order_unclear", "order_id": pending_order["id"]}
 
@@ -360,8 +360,8 @@ async def receive_message(request: Request):
                     clarify_reply = f"{ambiguous_note} Could you clarify so I can get this exactly right?"
                 else:
                     clarify_reply = (
-                        "I want to make sure I get your order exactly right. Could you let me know which "
-                        "item(s) and how many? (something like '2 lavender candles' works perfectly)"
+                        "I want to get your order exactly right. What would you like, and how many? "
+                        "(something like '2 lavender candles' works perfectly)"
                     )
                 await reply_and_log(vendor["id"], customer["id"], sender_wa_id, clarify_reply)
             else:
@@ -372,8 +372,8 @@ async def receive_message(request: Request):
                     add_to_review_queue(logged_message["id"], reason="insufficient_stock")
                     await reply_and_log(
                         vendor["id"], customer["id"], sender_wa_id,
-                        "Sorry, I don't have enough of that in stock right now — I've let the seller "
-                        "know in case more is coming, but I can't confirm that order as-is."
+                        "Sorry, I don't have enough of that in stock right now. I've let the seller "
+                        "know in case more is coming, but I can't confirm that order yet."
                     )
                     return {"status": "insufficient_stock"}
                 try:
@@ -415,7 +415,7 @@ async def receive_message(request: Request):
                 add_to_review_queue(logged_message["id"], reason="cancel_no_matching_order")
                 await reply_and_log(
                     vendor["id"], customer["id"], sender_wa_id,
-                    "I don't see an active unpaid order to cancel — if you already paid, let me "
+                    "I don't see an active unpaid order to cancel. If you already paid, let me "
                     "flag the seller to help with that instead."
                 )
             else:
@@ -426,7 +426,7 @@ async def receive_message(request: Request):
                     add_to_review_queue(logged_message["id"], reason="cancel_failed")
                     await reply_and_log(
                         vendor["id"], customer["id"], sender_wa_id,
-                        "I hit a snag cancelling that — I've flagged it for the seller to sort out."
+                        "I hit a snag cancelling that. I've flagged it for the seller to sort out."
                     )
                 else:
                     # Deliberate scope decision: if "cancel the last one, I want X instead" came in
@@ -435,11 +435,11 @@ async def receive_message(request: Request):
                     # than guessing at two intents out of one message.
                     await reply_and_log(
                         vendor["id"], customer["id"], sender_wa_id,
-                        "Done, that order's been cancelled. Let me know if you'd like to order "
+                        "Done, that order's been canceled. Let me know if you'd like to order "
                         "something else."
                     )
         elif intent == "noise":
-            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Hi there! Lovely to hear from you, what can I help you find today?")
+            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Hey! What can I help you find today?")
 
         return {"status": "processed", "intent": intent, "confidence": confidence}
 
@@ -468,7 +468,7 @@ async def receive_message(request: Request):
             if "vendor" in locals() and "customer" in locals() and "sender_wa_id" in locals():
                 await reply_and_log(
                     vendor["id"], customer["id"], sender_wa_id,
-                    "Something went wrong on my end handling that — I've flagged it for the seller."
+                    "Something went wrong on my end handling that. I've flagged it for the seller."
                 )
         except Exception as inner_e:
             print("Catch-all recovery itself failed:", inner_e)
