@@ -18,6 +18,7 @@ from db import (
     get_vendor_catalog,
     get_faq_snippets,
     create_order,
+    InsufficientStockError,
     get_pending_order,
     get_cancellable_order,
     get_order,
@@ -313,7 +314,17 @@ async def receive_message(request: Request):
                     )
                 await reply_and_log(vendor["id"], customer["id"], sender_wa_id, clarify_reply)
             else:
-                order = create_order(vendor["id"], customer["id"], line_items, logged_message["id"])
+                try:
+                    order = create_order(vendor["id"], customer["id"], line_items, logged_message["id"])
+                except InsufficientStockError as e:
+                    print("Order rejected, insufficient stock:", e)
+                    add_to_review_queue(logged_message["id"], reason="insufficient_stock")
+                    await reply_and_log(
+                        vendor["id"], customer["id"], sender_wa_id,
+                        "Sorry, I don't have enough of that in stock right now — I've let the seller "
+                        "know in case more is coming, but I can't confirm that order as-is."
+                    )
+                    return {"status": "insufficient_stock"}
                 try:
                     reply_text = generate_order_confirmation(line_items, order["total_amount"])
                 except Exception as e:
@@ -384,6 +395,33 @@ async def receive_message(request: Request):
     except (KeyError, IndexError) as e:
         print("Webhook parse error (likely a non-message event):", e)
         return {"status": "ignored_unparseable_event"}
+
+    except Exception as e:
+        # Catch-all safety net. Every external call inside this handler is now
+        # individually guarded (get_pending_order, mark_pending_payment,
+        # cancel_order, create_payment_for_order, classification, extraction),
+        # but log_message() runs BEFORE any of that — that's deliberate, it's
+        # what makes message_already_processed() work as an idempotency guard
+        # against Meta's webhook retries. The cost of that ordering: anything
+        # that still slips through uncaught here leaves the message permanently
+        # marked "processed" with no reply ever sent — Meta's retry hits
+        # message_already_processed=True and gives up, so without this net the
+        # message is gone for good, not just delayed. This can't guarantee a
+        # customer reply (a failure early enough might mean we don't even know
+        # who the customer is yet), but it guarantees the failure is visible
+        # and not silent.
+        print("Unhandled webhook error:", e)
+        try:
+            if "logged_message" in locals():
+                add_to_review_queue(logged_message["id"], reason="unhandled_error")
+            if "vendor" in locals() and "customer" in locals() and "sender_wa_id" in locals():
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
+                    "Something went wrong on my end handling that — I've flagged it for the seller."
+                )
+        except Exception as inner_e:
+            print("Catch-all recovery itself failed:", inner_e)
+        return {"status": "unhandled_error"}
 
 
 @app.post("/webhooks/paystack")
