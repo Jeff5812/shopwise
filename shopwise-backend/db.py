@@ -259,33 +259,35 @@ def get_vendor_catalog(vendor_id: str):
     return catalog
 
 
+class InsufficientStockError(Exception):
+    """Raised when create_order can't fulfill one or more line items — the RPC
+    rejects the whole order rather than partially filling it or silently
+    clamping to available stock."""
+    pass
+
+
 def create_order(vendor_id: str, customer_id: str, line_items: list, message_id: str):
     """
     line_items: list of {"variant_id": ..., "quantity": ..., "unit_price": ...}
-    Creates the order, its line items, and decrements stock for each variant.
+    Creates the order, its line items, and decrements stock for each variant —
+    all inside one Postgres transaction (create_order_with_stock, see
+    migrations/001_atomic_order_creation.sql). Previously this was three
+    separate read-then-write round trips per item with no stock floor
+    enforced at all: a request for more than was in stock was silently
+    accepted every time, not just under concurrent load.
     """
-    total = sum(item["quantity"] * item["unit_price"] for item in line_items)
-
-    order = supabase.table("orders").insert({
-        "vendor_id": vendor_id,
-        "customer_id": customer_id,
-        "status": "awaiting_confirmation",
-        "total_amount": total,
-    }).execute().data[0]
-
-    for item in line_items:
-        supabase.table("order_items").insert({
-            "order_id": order["id"],
-            "product_variant_id": item["variant_id"],
-            "quantity": item["quantity"],
-            "unit_price": item["unit_price"],
+    try:
+        result = supabase.rpc("create_order_with_stock", {
+            "p_vendor_id": vendor_id,
+            "p_customer_id": customer_id,
+            "p_message_id": message_id,
+            "p_items": [
+                {"variant_id": item["variant_id"], "quantity": item["quantity"], "unit_price": item["unit_price"]}
+                for item in line_items
+            ],
         }).execute()
-
-        # Decrement stock — read-then-write, fine at this traffic volume for MVP
-        variant = supabase.table("product_variants").select("stock_quantity").eq("id", item["variant_id"]).execute().data[0]
-        new_stock = max(0, variant["stock_quantity"] - item["quantity"])
-        supabase.table("product_variants").update({"stock_quantity": new_stock}).eq("id", item["variant_id"]).execute()
-
-    supabase.table("messages").update({"related_order_id": order["id"]}).eq("id", message_id).execute()
-
-    return order
+    except Exception as e:
+        if "insufficient_stock" in str(e):
+            raise InsufficientStockError(str(e)) from e
+        raise
+    return result.data
