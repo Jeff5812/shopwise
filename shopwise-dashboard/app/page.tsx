@@ -1,15 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { getVendor } from '@/lib/vendor';
 import { MotionHomeContent } from '@/components/MotionHomeContent';
-
-async function getVendor() {
-  const { data } = await supabase
-    .from('vendors')
-    .select('*')
-    .eq('whatsapp_phone_number_id', '1369817666207594')
-    .limit(1)
-    .maybeSingle();
-  return data;
-}
 
 async function getOrdersInRange(vendorId: string, start: Date, end: Date) {
   const { data } = await supabase

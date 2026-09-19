@@ -1,15 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { getVendor } from '@/lib/vendor';
 import { InboxBoard } from '@/components/InboxBoard';
-
-async function getVendor() {
-  const { data } = await supabase
-    .from('vendors')
-    .select('*')
-    .eq('whatsapp_phone_number_id', '1369817666207594')
-    .limit(1)
-    .maybeSingle();
-  return data;
-}
 
 async function getMessages(vendorId: string) {
   const { data } = await supabase

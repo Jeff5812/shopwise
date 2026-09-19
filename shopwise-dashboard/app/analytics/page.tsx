@@ -1,15 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { getVendor } from '@/lib/vendor';
 import { AnalyticsBoard } from '@/components/AnalyticsBoard';
-
-async function getVendor() {
-  const { data } = await supabase
-    .from('vendors')
-    .select('*')
-    .eq('whatsapp_phone_number_id', '1369817666207594')
-    .limit(1)
-    .maybeSingle();
-  return data;
-}
 
 async function getRangeOrders(vendorId: string, days: number) {
   const start = new Date();

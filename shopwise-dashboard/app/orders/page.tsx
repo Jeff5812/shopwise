@@ -1,15 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { getVendor } from '@/lib/vendor';
 import { OrdersBoard } from '@/components/OrdersBoard';
-
-async function getVendor() {
-  const { data } = await supabase
-    .from('vendors')
-    .select('*')
-    .eq('whatsapp_phone_number_id', '1369817666207594')
-    .limit(1)
-    .maybeSingle();
-  return data;
-}
 
 async function getOrdersWithDetails(vendorId: string) {
   const { data: orders } = await supabase
