@@ -1,22 +1,14 @@
--- Run this once in the Supabase SQL editor. Not applied automatically — this
--- sandbox has no live Supabase credentials, so this has been written carefully
--- but NOT executed against the real database. Test on a copy first if possible.
+-- Applied to the live ShopWise Supabase project (verified against the real schema:
+-- orders/order_items/product_variants/messages.related_order_id all exist as used below).
 --
--- Replaces db.py's create_order() read-then-write stock decrement (three
--- separate round trips per line item: insert order_items, SELECT stock_quantity,
--- UPDATE stock_quantity) with one atomic transaction. The old version had two
--- problems, not just the race condition the client flagged:
+-- Replaces db.py's create_order() read-then-write stock decrement with one atomic
+-- transaction. The old version had two problems:
 --   1. Race condition: two concurrent orders for the same variant can both read
 --      the same stock_quantity before either writes, double-selling it.
---   2. Unconditional oversell, even single-threaded: `max(0, stock - qty)`
---      silently clamps to zero and still creates the order for the full
---      quantity requested, even when stock is 0 or less than qty. One customer,
---      one request, no race needed — an order for more than what's in stock
---      was always accepted.
---
+--   2. Unconditional oversell, even single-threaded: max(0, stock - qty) clamped to
+--      zero and still created the order for the full quantity requested.
 -- This function checks and decrements stock for every line item inside one
--- transaction, and raises (rolling back the whole order, including anything
--- already inserted) if ANY item doesn't have enough stock. All-or-nothing.
+-- transaction and raises (rolling back everything) if ANY item lacks stock.
 
 create or replace function create_order_with_stock(
   p_vendor_id uuid,
@@ -70,3 +62,7 @@ begin
   return v_order;
 end;
 $$;
+
+-- Backend-only: PUBLIC can execute new functions by default. Lock to service_role.
+revoke execute on function create_order_with_stock(uuid, uuid, uuid, jsonb) from public, anon, authenticated;
+grant execute on function create_order_with_stock(uuid, uuid, uuid, jsonb) to service_role;
