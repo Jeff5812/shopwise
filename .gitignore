@@ -12,3 +12,6 @@
 # Local tooling
 .vscode/
 .DS_Store
+
+# Eval run outputs (keep an intentional baseline as evals/baseline.json instead)
+shopwise-backend/evals/results/
