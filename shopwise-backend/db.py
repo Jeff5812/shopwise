@@ -315,3 +315,43 @@ def create_order(vendor_id: str, customer_id: str, line_items: list, message_id:
             raise InsufficientStockError(str(e)) from e
         raise
     return result.data
+
+class OrderNotEditableError(Exception):
+    """Raised when a pending-order correction targets an order that is no longer
+    awaiting_confirmation (e.g. it moved to pending_payment or was cancelled meanwhile)."""
+    pass
+
+
+def get_order_items(order_id: str):
+    """Raw line items of an order (variant id, quantity, unit_price). Names/size/color are
+    resolved by the caller from the vendor catalog, which it already has."""
+    return (
+        supabase.table("order_items")
+        .select("product_variant_id, quantity, unit_price")
+        .eq("order_id", order_id)
+        .execute()
+        .data
+    )
+
+
+def replace_order_items(order_id: str, line_items: list):
+    """Edits an existing awaiting_confirmation order in place: restocks the old lines, reserves
+    the new ones and recalculates the total, all in one Postgres transaction
+    (replace_order_items_with_stock, see migrations/004_replace_order_items.sql). Never creates
+    a second order. line_items: [{"variant_id", "quantity", "unit_price"}], prices from the
+    catalog, never from the model."""
+    try:
+        result = supabase.rpc("replace_order_items_with_stock", {
+            "p_order_id": order_id,
+            "p_items": [
+                {"variant_id": i["variant_id"], "quantity": i["quantity"], "unit_price": i["unit_price"]}
+                for i in line_items
+            ],
+        }).execute()
+    except Exception as e:
+        if "insufficient_stock" in str(e):
+            raise InsufficientStockError(str(e)) from e
+        if "order_not_editable" in str(e) or "order_not_found" in str(e):
+            raise OrderNotEditableError(str(e)) from e
+        raise
+    return result.data

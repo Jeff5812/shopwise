@@ -37,6 +37,7 @@ from classifier import classify_message
 from order_extractor import extract_order, EXTRACTION_CONFIDENCE_THRESHOLD
 from reply_generator import generate_order_confirmation, generate_faq_answer
 from pending_response_classifier import classify_pending_response
+from pending_order_handler import handle_pending_followup
 from paystack_service import PaystackService
 from payment_service import create_payment_for_order, process_webhook_charge_success
 from email_capture import extract_email, looks_like_cancel, EMAIL_REQUEST, EMAIL_REQUEST_RETRY
@@ -296,20 +297,19 @@ async def receive_message(request: Request):
                 return {"status": "order_canceled", "order_id": pending_order["id"]}
 
             else:
-                # Deliberate scope decision: corrections ("actually make it 3") are not auto-handled
-                # yet, since that means editing an already-created order and its stock reservation.
-                # Escalate rather than guess or silently create a second, conflicting order.
-                try:
-                    update_message_classification(logged_message["id"], "unclassified", 0.0)
-                    add_to_review_queue(logged_message["id"], reason="unparseable")
-                except Exception as e:
-                    print("Escalation bookkeeping failed (still replying to the customer):", e)
-                await reply_and_log(
-                    vendor["id"], customer["id"], sender_wa_id,
-                    "I still need a yes or no to confirm your order. Let me know, and I'll flag your "
-                    "message to the seller too in case you'd like to change something."
+                # Anything that isn't a plain confirm/cancel (correction, question, casual chat,
+                # unclear) is delegated. The pending order is preserved in every case and is never
+                # auto-confirmed here, see pending_order_handler.py.
+                return await handle_pending_followup(
+                    action,
+                    text=text,
+                    pending_order=pending_order,
+                    vendor=vendor,
+                    customer=customer,
+                    wa_id=sender_wa_id,
+                    message_id=logged_message["id"],
+                    reply=reply_and_log,
                 )
-                return {"status": "escalated_pending_order_unclear", "order_id": pending_order["id"]}
 
         # Fetch recent conversation history once here — both the intent classifier and the order
         # extractor need it, since neither call was seeing anything beyond the current message before.

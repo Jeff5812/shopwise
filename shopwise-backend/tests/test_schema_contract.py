@@ -18,7 +18,10 @@ def _allowed(constraint: str) -> set:
 
 
 def test_review_queue_reasons_are_allowed():
-    used = set(re.findall(r'reason="([a-z_]+)"', (ROOT / "main.py").read_text()))
+    # pending_order_handler.py also writes review_queue reasons, so it is checked too.
+    used = set()
+    for name in ("main.py", "pending_order_handler.py"):
+        used |= set(re.findall(r'reason="([a-z_]+)"', (ROOT / name).read_text()))
     assert used, "no review reasons found — regex out of date?"
     assert used <= _allowed("review_queue_reason_check"), used - _allowed("review_queue_reason_check")
 
@@ -36,3 +39,10 @@ def test_order_statuses_written_are_allowed():
     used |= {"awaiting_confirmation", "canceled"}
     assert "pending_payment" in used
     assert used <= _allowed("orders_status_check"), used - _allowed("orders_status_check")
+
+
+def test_pending_handler_message_intents_are_allowed():
+    src = (ROOT / "pending_order_handler.py").read_text()
+    used = set(re.findall(r'_classify\(message_id, "([a-z_]+)"', src))
+    assert used == {"order", "question", "noise", "unclassified"}, used
+    assert used <= _allowed("messages_intent_check"), used - _allowed("messages_intent_check")
