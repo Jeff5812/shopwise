@@ -63,7 +63,7 @@ def env(monkeypatch):
     m(main, "update_message_classification", lambda *a, **k: None)
     m(main, "get_order_awaiting_email", lambda v, c: st["awaiting_order"])
     m(main, "get_pending_order", lambda v, c: st["pending_order"])
-    m(main, "classify_pending_response", lambda t: st["pending_action"])
+    m(main, "understand_pending_order", lambda *a, **k: {"action": st["pending_action"]})
     m(main, "mark_pending_payment", lambda oid: None)
     m(main, "set_customer_email", lambda cid, e: st.__setitem__("saved_email", e))
     m(main, "set_order_awaiting_email", lambda oid, a: st["awaiting_calls"].append((oid, a)))

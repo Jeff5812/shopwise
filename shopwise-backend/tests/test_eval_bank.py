@@ -67,21 +67,35 @@ def tripwire(monkeypatch):
     monkeypatch.setattr(ev.time, "sleep", lambda s: None)
 
 
-_ORACLE_LABEL = {"confirm": "confirm", "cancel": "cancel", "question": "question", "casual": "casual",
-                 "unclear": "other", "modify": "correct", "modify_empty": "correct"}
+_ORACLE_ACTION = {"confirm": "confirm", "cancel": "cancel", "question": "question", "casual": "casual",
+                  "unclear": "other", "modify": "correct", "modify_empty": "correct"}
+
+
+def _ops_to_reach(state_lines, wanted):
+    """Ops that turn the pending order into `wanted` (an oracle: what a perfect model would say)."""
+    have = dict(state_lines)
+    ops = [{"op": "remove_item", "variant_id": v} for v in have if v not in wanted]
+    for v, q in wanted.items():
+        if v not in have:
+            ops.append({"op": "add_item", "variant_id": v, "quantity": q})
+        elif have[v] != q:
+            ops.append({"op": "set_quantity", "variant_id": v, "quantity": q})
+    return ops
 
 
 def _install_oracle(monkeypatch, current):
-    def label(text):
-        return _ORACLE_LABEL[current["sc"].ok[0]["kind"]]
+    def understand(text, pending_order, vendor, customer, message_id=None):
+        sc = current["sc"]
+        spec = sc.ok[0]
+        ops = []
+        if spec["kind"] == "modify":
+            ops = _ops_to_reach(STATES[sc.state], spec["lines"])
+        elif spec["kind"] == "modify_empty":
+            ops = [{"op": "remove_item", "variant_id": v} for v, _ in STATES[sc.state]]
+        return {"action": _ORACLE_ACTION[spec["kind"]], "confidence": 0.95, "ops": ops,
+                "also_question": False, "note": None}
 
-    def interp(text, current_lines, catalog, history=None):
-        spec = current["sc"].ok[0]
-        items = [{"variant_id": v, "quantity": q} for v, q in spec["lines"].items()] if spec["kind"] == "modify" else []
-        return {"line_items": items, "confidence": 0.95, "ambiguous_note": None}
-
-    monkeypatch.setattr(ev.prc, "classify_pending_response", label)
-    monkeypatch.setattr(ev.poh, "interpret_correction", interp)
+    monkeypatch.setattr(ev.pu, "understand_pending_order", understand)
 
 
 def _grade_all(current):
@@ -105,44 +119,39 @@ def test_a_perfect_understanding_layer_scores_100_percent_with_no_harms(monkeypa
 
 
 def test_an_always_confirm_system_is_flagged_for_every_unsafe_confirm(monkeypatch, tripwire):
-    monkeypatch.setattr(ev.prc, "classify_pending_response", lambda text: "confirm")
+    monkeypatch.setattr(ev.pu, "understand_pending_order", lambda *a, **k: {"action": "confirm"})
     rows = _grade_all({})
     expect_unsafe = sum(1 for s in SCENARIOS if all(o["kind"] != "confirm" for o in s.ok))
     assert sum(r["score"]["unsafe_confirm"] for r in rows) == expect_unsafe > 0
 
 
 def test_an_always_cancel_system_is_flagged(monkeypatch, tripwire):
-    monkeypatch.setattr(ev.prc, "classify_pending_response", lambda text: "cancel")
+    monkeypatch.setattr(ev.pu, "understand_pending_order", lambda *a, **k: {"action": "cancel"})
     rows = _grade_all({})
     assert sum(r["score"]["unsafe_cancel"] for r in rows) > 0
 
 
 def test_a_model_that_hallucinates_variants_never_edits_anything(monkeypatch, tripwire):
-    monkeypatch.setattr(ev.prc, "classify_pending_response", lambda text: "correct")
-    monkeypatch.setattr(ev.poh, "interpret_correction", lambda *a, **k: {
-        "line_items": [{"variant_id": "does-not-exist", "quantity": 1}], "confidence": 0.99, "ambiguous_note": None})
+    monkeypatch.setattr(ev.pu, "understand_pending_order", lambda *a, **k: {
+        "action": "correct", "confidence": 0.99, "note": None, "also_question": False,
+        "ops": [{"op": "add_item", "variant_id": "does-not-exist", "quantity": 1}]})
     rows = _grade_all({})
     assert not any(r["score"]["wrong_edit"] for r in rows)
     assert {r["pred"]["kind"] for r in rows} == {"unclear"}
 
 
 def test_a_confidently_wrong_model_is_caught_as_wrong_edit(monkeypatch, tripwire):
-    monkeypatch.setattr(ev.prc, "classify_pending_response", lambda text: "correct")
-    monkeypatch.setattr(ev.poh, "interpret_correction", lambda *a, **k: {
-        "line_items": [{"variant_id": "soap", "quantity": 9}], "confidence": 0.99, "ambiguous_note": None})
+    monkeypatch.setattr(ev.pu, "understand_pending_order", lambda *a, **k: {
+        "action": "correct", "confidence": 0.99, "note": None, "also_question": False,
+        "ops": [{"op": "add_item", "variant_id": "soap", "quantity": 9}]})
     rows = _grade_all({})
     assert sum(r["score"]["wrong_edit"] for r in rows) > 0
 
 
 def test_api_failures_are_reported_as_errors_not_silently_scored_as_misses(monkeypatch, tripwire):
-    def boom(text):
+    def boom(*a, **k):
         raise RuntimeError("503 UNAVAILABLE")
-    monkeypatch.setattr(ev.prc, "classify_pending_response", boom)
-    pred = ev.predict(SCENARIOS[0])
-    assert pred["kind"] == "error"
-
-    monkeypatch.setattr(ev.prc, "classify_pending_response", lambda text: "correct")
-    monkeypatch.setattr(ev.poh, "interpret_correction", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(ev.pu, "understand_pending_order", boom)
     assert ev.predict(SCENARIOS[0])["kind"] == "error"
 
 
@@ -186,7 +195,7 @@ def test_pacer_spaces_calls_to_the_requested_rate(monkeypatch):
     assert sleeps == [13.0] and p.calls == 3   # 2s elapsed -> wait 13s; 20s elapsed -> no wait
 
 
-def test_install_pacer_wraps_the_real_client_call_path_once(monkeypatch):
+def test_install_pacer_wraps_the_understanding_clients_call_path_once(monkeypatch):
     calls = []
 
     class Models:
@@ -195,8 +204,7 @@ def test_install_pacer_wraps_the_real_client_call_path_once(monkeypatch):
             return "resp"
 
     shared = type("C", (), {"models": Models()})()
-    monkeypatch.setattr(ev.prc, "client", shared)
-    monkeypatch.setattr(ev.poh, "client", shared)      # same client used by both modules
+    monkeypatch.setattr(ev.pu, "client", shared)
     waits = []
     monkeypatch.setattr(ev._Pacer, "wait", lambda self: waits.append(1))
     ev._install_pacer(4)

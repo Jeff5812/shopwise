@@ -36,7 +36,7 @@ from db import (
 from classifier import classify_message
 from order_extractor import extract_order, EXTRACTION_CONFIDENCE_THRESHOLD
 from reply_generator import generate_order_confirmation, generate_faq_answer
-from pending_response_classifier import classify_pending_response
+from pending_understanding import understand_pending_order
 from pending_order_handler import handle_pending_followup
 from paystack_service import PaystackService
 from payment_service import create_payment_for_order, process_webhook_charge_success
@@ -223,10 +223,12 @@ async def receive_message(request: Request):
             pending_order = None
         if pending_order:
             try:
-                action = classify_pending_response(text)
+                understanding = understand_pending_order(
+                    text, pending_order, vendor, customer, logged_message["id"])
             except Exception as e:
-                print("Pending-response classification failed:", e)
-                action = "other"
+                print("Pending-order understanding failed:", e)
+                understanding = {"action": "other"}
+            action = understanding["action"]
 
             if action == "confirm":
                 try:
@@ -237,7 +239,7 @@ async def receive_message(request: Request):
                     # here crashes straight through to a raw 500 with zero reply, and critically
                     # leaves the order stuck at 'awaiting_confirmation' (never even reaches
                     # pending_payment). That means get_pending_order() keeps matching it on every
-                    # later message, so classify_pending_response correctly says "other" for
+                    # later message, so understand_pending_order correctly says "other" for
                     # "Where do I pay?" and the customer just keeps hearing "still waiting on a
                     # yes or no" to a question they already answered. Live evidence: "Yeah Confirm"
                     # got no reply at all, then two later unrelated messages both got the exact
@@ -309,6 +311,7 @@ async def receive_message(request: Request):
                     wa_id=sender_wa_id,
                     message_id=logged_message["id"],
                     reply=reply_and_log,
+                    understanding=understanding,
                 )
 
         # Fetch recent conversation history once here — both the intent classifier and the order

@@ -12,7 +12,7 @@ Grades how well the pending-order assistant understands customers, using REAL Ge
 
 It never touches Supabase or WhatsApp: the database layer is faked and db.supabase is replaced
 with a tripwire that raises if anything reaches for it. The product code under test is the real
-classify_pending_response + the real pending_order_handler (so validation, price lookup and reply
+understand_pending_order (one real Gemini call) + the real pending_order_handler (so validation, price lookup and reply
 logic are exercised exactly as in production).
 
 COUPLING NOTE: predict() below is the ONLY place this file depends on how the product is wired.
@@ -34,7 +34,7 @@ os.environ["SUPABASE_URL"] = "https://eval.invalid"
 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.eval"
 
 import db  # noqa: E402
-import pending_response_classifier as prc  # noqa: E402
+import pending_understanding as pu  # noqa: E402
 import pending_order_handler as poh  # noqa: E402
 from evals.scenarios import SCENARIOS, STATES, CATALOG, PRICES  # noqa: E402
 
@@ -71,21 +71,14 @@ def _names(lines):
 def predict(sc) -> dict:
     lines = STATES[sc.state]
     total = sum(PRICES[v] * q for v, q in lines)
-    world = {"applied": None, "interp": None, "interp_error": None, "reply": None}
+    world = {"applied": None, "reply": None}
     history = [
         {"direction": "inbound", "raw_text": f"I want {_names(lines)}"},
         {"direction": "outbound",
          "raw_text": f"That's {_names(lines)}, coming to \u20a6{total} total. Shall I confirm this for you?"},
     ]
-    real_interpret = poh.interpret_correction
-
-    def spying_interpret(*args, **kwargs):
-        try:
-            world["interp"] = real_interpret(*args, **kwargs)
-            return world["interp"]
-        except Exception as e:  # surfaced as an ERROR, not silently scored as a miss
-            world["interp_error"] = repr(e)
-            raise
+    order_rows = lambda oid: [{"product_variant_id": v, "quantity": q, "unit_price": PRICES[v]} for v, q in lines]
+    catalog = lambda vid: json.loads(json.dumps(CATALOG))
 
     def fake_replace(order_id, items):
         world["applied"] = {i["variant_id"]: i["quantity"] for i in items}
@@ -94,43 +87,42 @@ def predict(sc) -> dict:
     async def capture_reply(vendor_id, customer_id, wa_id, body):
         world["reply"] = body
 
-    result = {"label": None}
-    # 1) the pending-response label, retried on transient API errors
-    last = None
-    for attempt in range(3):
-        try:
-            result["label"] = prc.classify_pending_response(sc.text)
-            break
-        except Exception as e:
-            last = e
-            time.sleep(2 * (attempt + 1))
-    if result["label"] is None:
+    # 1) the single understanding call (real Gemini), retried on transient API errors
+    understanding, last = None, None
+    with patch.multiple(pu, get_vendor_catalog=catalog, get_order_items=order_rows,
+                        get_conversation_history=lambda *a, **k: history):
+        for attempt in range(3):
+            try:
+                understanding = pu.understand_pending_order(
+                    sc.text, {"id": "o1"}, {"id": "v1"}, {"id": "c1"}, "m1")
+                break
+            except Exception as e:
+                last = e
+                time.sleep(2 * (attempt + 1))
+    if understanding is None:
         return {"kind": "error", "error": repr(last), "label": None}
 
-    label = result["label"]
+    label = understanding["action"]
     if label in _LABEL_KIND:
-        return {"kind": _LABEL_KIND[label], "label": label}
+        return {"kind": _LABEL_KIND[label], "label": label, "interp": understanding}
 
+    # 2) the real handler (business rules) over a faked database
     with patch.multiple(
         poh,
-        get_vendor_catalog=lambda vid: json.loads(json.dumps(CATALOG)),
-        get_order_items=lambda oid: [{"product_variant_id": v, "quantity": q, "unit_price": PRICES[v]} for v, q in lines],
-        get_conversation_history=lambda *a, **k: history,
+        get_vendor_catalog=catalog,
+        get_order_items=order_rows,
         get_faq_snippets=lambda vid: [],
         replace_order_items=fake_replace,
         add_to_review_queue=lambda *a, **k: None,
         update_message_classification=lambda *a, **k: None,
         generate_order_confirmation=lambda items, total: "(confirmation text)",
-        interpret_correction=spying_interpret,
     ):
         status = asyncio.run(poh.handle_pending_followup(
             label, text=sc.text, pending_order={"id": "o1"}, vendor={"id": "v1"}, customer={"id": "c1"},
-            wa_id="2340000000000", message_id="m1", reply=capture_reply,
+            wa_id="2340000000000", message_id="m1", reply=capture_reply, understanding=understanding,
         ))["status"]
 
-    base = {"label": label, "status": status, "interp": world["interp"], "reply": world["reply"]}
-    if world["interp_error"]:
-        return {**base, "kind": "error", "error": world["interp_error"]}
+    base = {"label": label, "status": status, "interp": understanding, "reply": world["reply"]}
     if status == "pending_order_corrected":
         return {**base, "kind": "modify", "lines": world["applied"]}
     if status == "pending_order_correction_no_change":
@@ -182,7 +174,7 @@ def _install_pacer(rpm: float):
     """Wraps generate_content on the clients the product uses (eval-only; production untouched)."""
     pacer = _Pacer(rpm)
     seen = set()
-    for holder in (prc, poh):
+    for holder in (pu,):
         models = holder.client.models
         if id(models) in seen:
             continue
