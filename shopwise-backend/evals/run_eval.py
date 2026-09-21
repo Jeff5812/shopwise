@@ -5,7 +5,10 @@ Grades how well the pending-order assistant understands customers, using REAL Ge
     python -m evals.run_eval                       # whole bank (needs GEMINI_API_KEY in .env)
     python -m evals.run_eval --category pidgin     # one category
     python -m evals.run_eval --limit 20 --failures # quick look, print only the misses
-    python -m evals.run_eval --baseline evals/baseline.json   # compare with an earlier run
+    python -m evals.run_eval --out evals/baseline.json            # saved after every message
+    python -m evals.run_eval --out evals/baseline.json --resume   # continue after a quota stop / Ctrl+C
+    python -m evals.run_eval --rpm 0                              # no pacing (paid key)
+    python -m evals.run_eval --baseline evals/baseline.json       # compare with an earlier run
 
 It never touches Supabase or WhatsApp: the database layer is faked and db.supabase is replaced
 with a tripwire that raises if anything reaches for it. The product code under test is the real
@@ -18,6 +21,7 @@ If the understanding layer is redesigned, adapt predict() and the bank/scoring s
 import os
 import sys
 import json
+import re
 import time
 import asyncio
 import argparse
@@ -158,22 +162,93 @@ def score(sc, pred: dict) -> dict:
     }
 
 
-def run(scenarios, sleep=0.0, progress=True):
-    rows = []
+class _Pacer:
+    """Spaces Gemini calls so a per-minute quota (free tier: 5/min on gemini-2.5-flash) is never exceeded."""
+
+    def __init__(self, rpm: float):
+        self.min_gap = 60.0 / rpm
+        self.last = 0.0
+        self.calls = 0
+
+    def wait(self):
+        gap = time.time() - self.last
+        if self.last and gap < self.min_gap:
+            time.sleep(self.min_gap - gap)
+        self.last = time.time()
+        self.calls += 1
+
+
+def _install_pacer(rpm: float):
+    """Wraps generate_content on the clients the product uses (eval-only; production untouched)."""
+    pacer = _Pacer(rpm)
+    seen = set()
+    for holder in (prc, poh):
+        models = holder.client.models
+        if id(models) in seen:
+            continue
+        seen.add(id(models))
+
+        def paced(*args, _orig=models.generate_content, **kwargs):
+            pacer.wait()
+            return _orig(*args, **kwargs)
+
+        models.generate_content = paced
+    return pacer
+
+
+def _is_quota_error(err) -> bool:
+    return bool(err) and ("RESOURCE_EXHAUSTED" in err or "429" in err)
+
+
+def _is_daily_quota(err) -> bool:
+    return bool(err) and "PerDay" in err
+
+
+def _quota_wait_seconds(err) -> float:
+    """Honour Google's own hint ('Please retry in 7.5s' / 'retryDelay': '7s'), with a safe floor."""
+    m = re.search(r"retry in ([0-9.]+)s", err) or re.search(r"retryDelay'?\W+([0-9.]+)s", err)
+    return min(90.0, max(15.0, float(m.group(1)) + 5.0)) if m else 65.0
+
+
+def run(scenarios, sleep=0.0, progress=True, on_row=None, quota_retries=3):
+    """Returns (rows, stop_reason). Quota errors are waited out and retried, not scored as misses.
+    A DAILY quota error stops the run cleanly (stop_reason set); on_row(rows) lets the caller checkpoint."""
+    rows, stop_reason = [], None
     for i, sc in enumerate(scenarios, 1):
         started = time.time()
-        pred = predict(sc)
+        for attempt in range(quota_retries + 1):
+            pred = predict(sc)
+            err = pred.get("error") if pred["kind"] == "error" else None
+            if not _is_quota_error(err) or _is_daily_quota(err) or attempt == quota_retries:
+                break
+            wait = _quota_wait_seconds(err)
+            print(f"      quota hit, waiting {wait:.0f}s then retrying {sc.id} ({attempt + 1}/{quota_retries})", flush=True)
+            time.sleep(wait)
         row = {"id": sc.id, "category": sc.category, "state": sc.state, "text": sc.text,
                "expected": list(sc.ok), "also": sc.also, "pred": pred,
                "seconds": round(time.time() - started, 2)}
         row["score"] = None if pred["kind"] == "error" else score(sc, pred)
         rows.append(row)
+        if on_row:
+            on_row(rows)
         if progress:
             mark = "ERR" if row["score"] is None else ("ok " if row["score"]["passed"] else "MISS")
             print(f"[{i:>3}/{len(scenarios)}] {mark} {sc.id:<18} {sc.text[:60]}", flush=True)
+        if _is_daily_quota(err):
+            stop_reason = ("Daily Gemini quota reached. Progress is saved; re-run the same command with "
+                           "--resume tomorrow, or use a key with billing enabled.")
+            break
         if sleep:
             time.sleep(sleep)
-    return rows
+    return rows, stop_reason
+
+
+def _save(path, rows):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"created": datetime.datetime.now().isoformat(), "rows": rows}, f, indent=2, default=str)
+    os.replace(tmp, path)
 
 
 # ------------------------------------------------------------------------------------------
@@ -262,8 +337,11 @@ def main(argv=None):
     ap.add_argument("--category", help="only this category (see evals/scenarios.py)")
     ap.add_argument("--limit", type=int, help="only the first N scenarios (after category filter)")
     ap.add_argument("--failures", action="store_true", help="hide the per-message progress lines")
-    ap.add_argument("--sleep", type=float, default=0.0, help="seconds to pause between messages (rate limits)")
-    ap.add_argument("--out", help="write full results JSON here (default: evals/results/run-<time>.json)")
+    ap.add_argument("--rpm", type=float, default=4.0,
+                    help="max Gemini calls per minute (free tier allows 5 on gemini-2.5-flash); 0 = no pacing")
+    ap.add_argument("--sleep", type=float, default=0.0, help="extra seconds to pause between messages")
+    ap.add_argument("--out", help="results JSON, saved after EVERY message (default: evals/results/run-<time>.json)")
+    ap.add_argument("--resume", action="store_true", help="continue a previous run saved in --out (skips scored rows)")
     ap.add_argument("--baseline", help="results JSON from an earlier run to compare against")
     args = ap.parse_args(argv)
 
@@ -276,13 +354,35 @@ def main(argv=None):
     if not scenarios:
         sys.exit("No scenarios matched.")
 
-    rows = run(scenarios, sleep=args.sleep, progress=not args.failures)
-    report(rows, failures_only=args.failures)
-
     out = args.out or os.path.join("evals", "results", f"run-{datetime.datetime.now():%Y%m%d-%H%M%S}.json")
-    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-    with open(out, "w") as f:
-        json.dump({"created": datetime.datetime.now().isoformat(), "rows": rows}, f, indent=2, default=str)
+    done = {}
+    if args.resume and os.path.exists(out):
+        done = {r["id"]: r for r in json.load(open(out))["rows"] if r["score"]}
+        print(f"Resuming: {len(done)} scenarios already scored in {out}")
+    todo = [s for s in scenarios if s.id not in done]
+    if not todo:
+        print("Nothing left to run.")
+
+    if args.rpm > 0 and todo:
+        _install_pacer(args.rpm)
+        est = int(len(todo) * 1.7 / args.rpm) + 1
+        print(f"Pacing at {args.rpm:g} Gemini calls/min: about {est} minutes for {len(todo)} messages. "
+              "Progress is saved after every message; Ctrl+C is safe, then re-run with --resume.")
+
+    def checkpoint(new_rows):
+        _save(out, list(done.values()) + new_rows)
+
+    try:
+        new_rows, stop_reason = run(todo, sleep=args.sleep, progress=not args.failures, on_row=checkpoint)
+    except KeyboardInterrupt:
+        sys.exit(f"Interrupted. Progress saved in {out}; continue with: python -m evals.run_eval --out {out} --resume")
+
+    order = {s.id: i for i, s in enumerate(SCENARIOS)}
+    rows = sorted(list(done.values()) + new_rows, key=lambda r: order[r["id"]])
+    report(rows, failures_only=args.failures)
+    if stop_reason:
+        print("\n" + stop_reason)
+    _save(out, rows)
     print(f"Full results saved to {out}")
     if args.baseline:
         compare(rows, args.baseline)

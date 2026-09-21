@@ -165,3 +165,108 @@ def test_report_and_baseline_comparison_run_cleanly(monkeypatch, tripwire, tmp_p
     base.write_text(json.dumps({"rows": degraded}))
     ev.compare(rows, str(base))
     assert "1 improved, 0 regressed" in capsys.readouterr().out
+
+
+# ---- quota handling, pacing, checkpoint/resume (added after the free-tier 5 requests/min stop) -----
+QUOTA_429 = ("429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Quota exceeded ... Please retry in "
+             "7.5s.', 'details': [{'retryDelay': '7s'}]}}")
+QUOTA_DAILY = "429 RESOURCE_EXHAUSTED ... GenerateRequestsPerDayPerProjectPerModel-FreeTier ... limit: 20"
+
+
+def _ok_pred():
+    return {"kind": "casual", "label": "casual"}
+
+
+def test_pacer_spaces_calls_to_the_requested_rate(monkeypatch):
+    sleeps, clock = [], {"t": 1000.0}
+    monkeypatch.setattr(ev.time, "time", lambda: clock["t"])
+    monkeypatch.setattr(ev.time, "sleep", lambda s: (sleeps.append(round(s, 3)), clock.__setitem__("t", clock["t"] + s)))
+    p = ev._Pacer(rpm=4)                       # one call every 15s
+    p.wait(); clock["t"] += 2; p.wait(); clock["t"] += 20; p.wait()
+    assert sleeps == [13.0] and p.calls == 3   # 2s elapsed -> wait 13s; 20s elapsed -> no wait
+
+
+def test_install_pacer_wraps_the_real_client_call_path_once(monkeypatch):
+    calls = []
+
+    class Models:
+        def generate_content(self, **kw):
+            calls.append(kw)
+            return "resp"
+
+    shared = type("C", (), {"models": Models()})()
+    monkeypatch.setattr(ev.prc, "client", shared)
+    monkeypatch.setattr(ev.poh, "client", shared)      # same client used by both modules
+    waits = []
+    monkeypatch.setattr(ev._Pacer, "wait", lambda self: waits.append(1))
+    ev._install_pacer(4)
+    assert shared.models.generate_content(model="m", contents="x") == "resp"
+    assert calls == [{"model": "m", "contents": "x"}] and len(waits) == 1, "wrapped exactly once, not twice"
+
+
+def test_quota_wait_uses_googles_hint_with_sane_bounds():
+    assert ev._quota_wait_seconds(QUOTA_429) == 15.0               # 7.5 + 5 = 12.5 -> floor 15
+    assert ev._quota_wait_seconds("retry in 40s") == 45.0
+    assert ev._quota_wait_seconds("retry in 500s") == 90.0         # capped
+    assert ev._quota_wait_seconds("429 no hint here") == 65.0
+    assert ev._is_quota_error(QUOTA_429) and not ev._is_quota_error("503 UNAVAILABLE") and not ev._is_quota_error(None)
+    assert ev._is_daily_quota(QUOTA_DAILY) and not ev._is_daily_quota(QUOTA_429)
+
+
+def test_run_waits_out_a_per_minute_quota_and_retries_instead_of_scoring_an_error(monkeypatch):
+    slept, seen = [], []
+    monkeypatch.setattr(ev.time, "sleep", lambda s: slept.append(s))
+
+    def flaky(sc):
+        seen.append(sc.id)
+        return {"kind": "error", "error": QUOTA_429} if len(seen) < 3 else _ok_pred()
+    monkeypatch.setattr(ev, "predict", flaky)
+    rows, stop = ev.run(SCENARIOS[:1], progress=False)
+    assert len(seen) == 3 and slept == [15.0, 15.0] and rows[0]["score"] is not None and stop is None
+
+
+def test_run_gives_up_after_the_retry_budget_and_reports_an_error(monkeypatch):
+    monkeypatch.setattr(ev.time, "sleep", lambda s: None)
+    monkeypatch.setattr(ev, "predict", lambda sc: {"kind": "error", "error": QUOTA_429})
+    rows, stop = ev.run(SCENARIOS[:1], progress=False, quota_retries=2)
+    assert rows[0]["score"] is None and stop is None
+
+
+def test_run_stops_cleanly_on_a_daily_quota_and_keeps_progress(monkeypatch):
+    monkeypatch.setattr(ev.time, "sleep", lambda s: None)
+    n = {"i": 0}
+
+    def pred(sc):
+        n["i"] += 1
+        return _ok_pred() if n["i"] <= 2 else {"kind": "error", "error": QUOTA_DAILY}
+    monkeypatch.setattr(ev, "predict", pred)
+    saved = []
+    rows, stop = ev.run(SCENARIOS[:6], progress=False, on_row=lambda r: saved.append(len(r)))
+    assert len(rows) == 3 and stop and "--resume" in stop, "stops at the first daily-quota error, no wasted calls"
+    assert saved == [1, 2, 3], "checkpoint callback fired after every message"
+
+
+def test_main_saves_after_every_message_and_resume_only_reruns_whats_missing(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("GEMINI_API_KEY", "real-looking-key")
+    out = str(tmp_path / "baseline.json")
+    calls = []
+
+    def pred(sc):
+        calls.append(sc.id)
+        if len(calls) == 3:
+            raise KeyboardInterrupt            # user hits Ctrl+C mid-run
+        return _ok_pred()
+    monkeypatch.setattr(ev, "predict", pred)
+    with pytest.raises(SystemExit) as e:
+        ev.main(["--rpm", "0", "--limit", "5", "--out", out])
+    assert "--resume" in str(e.value)
+    saved = json.load(open(out))["rows"]
+    assert [r["id"] for r in saved] == [s.id for s in SCENARIOS[:2]], "the two finished messages were saved"
+
+    calls.clear()
+    monkeypatch.setattr(ev, "predict", lambda sc: (calls.append(sc.id), _ok_pred())[1])
+    ev.main(["--rpm", "0", "--limit", "5", "--out", out, "--resume"])
+    assert calls == [s.id for s in SCENARIOS[2:5]], "resume re-ran only the unfinished ones"
+    final = json.load(open(out))["rows"]
+    assert [r["id"] for r in final] == [s.id for s in SCENARIOS[:5]] and all(r["score"] for r in final)
+    assert not os.path.exists(out + ".tmp")
