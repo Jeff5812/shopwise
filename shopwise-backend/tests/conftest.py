@@ -85,3 +85,59 @@ def mock_extractor_client(monkeypatch):
         return fake_client
 
     return _install
+
+
+@pytest.fixture
+def mock_understanding_client(monkeypatch):
+    """Patch understanding.client.models.generate_content to return a canned payload."""
+    import understanding
+
+    def _install(payload):
+        fake_client = MagicMock()
+        fake_client.models.generate_content.return_value = _fake_response(payload)
+        monkeypatch.setattr(understanding, "client", fake_client)
+        return fake_client
+
+    return _install
+
+
+# Real get_vendor_catalog() shape (product_id/sell_price/floor_price + variant_id/size/color/
+# stock_quantity) — distinct from the legacy FIXED_CATALOG above, which predates catalog_index.py
+# and is only consumed by classifier/order_extractor tests that dump it straight into a prompt.
+REAL_SHAPE_CATALOG = [
+    {
+        "product_id": "prod-candle",
+        "name": "Lavender Candle",
+        "sell_price": 2500,
+        "floor_price": 2000,
+        "variants": [
+            {"variant_id": "cand-lav-std", "size": None, "color": None, "stock_quantity": 20},
+        ],
+    },
+    {
+        "product_id": "prod-gown",
+        "name": "Ankara Gown",
+        "sell_price": 15000,
+        "floor_price": 12000,
+        "variants": [
+            {"variant_id": "gown-ank-s-blue", "size": "S", "color": "blue", "stock_quantity": 5},
+            {"variant_id": "gown-ank-m-blue", "size": "M", "color": "blue", "stock_quantity": 5},
+            {"variant_id": "gown-ank-m-red", "size": "M", "color": "red", "stock_quantity": 3},
+        ],
+    },
+]
+
+
+def make_state(pending_order=None, lines=None, catalog=None, history=None):
+    """Builds a ConversationState for understanding.py tests without touching the database."""
+    from conversation_state import ConversationState
+
+    return ConversationState(
+        vendor_id="vendor-1",
+        customer_id="customer-1",
+        pending_order=pending_order,
+        lines=lines or [],
+        catalog=catalog if catalog is not None else REAL_SHAPE_CATALOG,
+        history=history or [],
+        awaiting="confirmation" if pending_order else None,
+    )
