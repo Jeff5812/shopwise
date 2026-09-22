@@ -17,7 +17,8 @@ with anything else, so this module never has to think about payment.
 
     edits present, no order pending  -> start a new order (create_order)
     edits present, order pending     -> revise the SAME order in place (replace_order_items)
-    ask_question                     -> answer from FAQ data, mention the pending order if any
+    ask_question                     -> answer from FAQ data, then the real catalog (availability),
+                                         mention the pending order if any
     small_talk                       -> friendly reply, mention the pending order if any
     anything else / unknown          -> ask / flag to review_queue, never guess
 
@@ -37,7 +38,7 @@ from db import (
     OrderNotEditableError,
 )
 from catalog_index import variant_index, variant_label
-from reply_generator import generate_order_confirmation, generate_faq_answer
+from reply_generator import generate_order_confirmation, generate_faq_answer, generate_catalog_answer
 from actions import EDIT_TYPES
 
 PENDING_REMINDER = "Your order is still waiting: reply 'yes' to confirm or 'no' to cancel."
@@ -120,8 +121,12 @@ def _flag(message_id, reason):
         print("Executor review_queue bookkeeping failed:", e)
 
 
-def _faq_answer(text, vendor_id, message_id):
-    """The vendor's FAQ answer for this text, or None (question gets flagged for the seller)."""
+def _answer_question(text, vendor_id, catalog, message_id):
+    """Answers from the vendor's own grounded data, trying FAQ/policy first (delivery, returns,
+    payment) then the real product catalog (availability/stock) -- these are two different
+    questions with two different data sources, not one "ask_question" answered from a single
+    place. Returns None (and flags for the seller) only when NEITHER source can answer, so we
+    still never guess."""
     try:
         faq_result = generate_faq_answer(text, get_faq_snippets(vendor_id))
     except Exception as e:
@@ -129,6 +134,15 @@ def _faq_answer(text, vendor_id, message_id):
         faq_result = {"answered": False, "reply": None}
     if faq_result["answered"] and faq_result["reply"]:
         return faq_result["reply"]
+
+    try:
+        catalog_result = generate_catalog_answer(text, catalog)
+    except Exception as e:
+        print("Catalog answering failed:", e)
+        catalog_result = {"answered": False, "reply": None}
+    if catalog_result["answered"] and catalog_result["reply"]:
+        return catalog_result["reply"]
+
     _flag(message_id, reason="unparseable")
     return None
 
@@ -145,7 +159,7 @@ def _confirmation_text(line_items, total, prefix=""):
 # ---------------------------------------------------------------------------------------------
 # Edits: no order pending -> start one. Order pending -> revise it in place.
 # ---------------------------------------------------------------------------------------------
-async def _execute_new_order(edits, *, text, confidence, vendor, customer, wa_id, message_id, reply, also_question):
+async def _execute_new_order(edits, *, text, confidence, catalog, vendor, customer, wa_id, message_id, reply, also_question):
     if any(a["type"] != "add_item" for a in edits):
         # Nothing to set_quantity/remove/swap when there's no order yet — the model got
         # confused about state; ask instead of guessing what it meant.
@@ -203,14 +217,14 @@ async def _execute_new_order(edits, *, text, confidence, vendor, customer, wa_id
     _classify(message_id, "order", confidence)
     summary = _confirmation_text(line_items, order["total_amount"])
     if also_question:
-        answer = _faq_answer(text, vendor["id"], message_id)
+        answer = _answer_question(text, vendor["id"], catalog, message_id)
         summary += f"\n\n{answer}" if answer else "\n\nI've also passed your question on to the seller."
 
     await reply(vendor["id"], customer["id"], wa_id, summary)
     return {"status": "new_order_created", "order_id": order["id"]}
 
 
-async def _execute_correction(edits, *, text, pending_order, confidence, note, vendor, customer,
+async def _execute_correction(edits, *, text, pending_order, confidence, note, catalog, vendor, customer,
                               wa_id, message_id, reply, also_question):
     order_id = pending_order["id"]
 
@@ -283,7 +297,7 @@ async def _execute_correction(edits, *, text, pending_order, confidence, note, v
     total = (updated[0] if isinstance(updated, list) else updated)["total_amount"]
     summary = _confirmation_text(revised, total, prefix="Updated! ")
     if also_question:
-        answer = _faq_answer(text, vendor["id"], message_id)
+        answer = _answer_question(text, vendor["id"], catalog, message_id)
         summary += f"\n\n{answer}" if answer else "\n\nI've also passed your question on to the seller."
 
     # Deliberately NOT confirmed: they must answer yes to the updated order.
@@ -294,8 +308,8 @@ async def _execute_correction(edits, *, text, pending_order, confidence, note, v
 # ---------------------------------------------------------------------------------------------
 # Non-edit actions. Same behaviour with or without a pending order, just with/without the reminder.
 # ---------------------------------------------------------------------------------------------
-async def _execute_question(*, text, vendor, customer, wa_id, message_id, reply, pending_order):
-    answer = _faq_answer(text, vendor["id"], message_id)
+async def _execute_question(*, text, vendor, customer, wa_id, message_id, reply, pending_order, catalog):
+    answer = _answer_question(text, vendor["id"], catalog, message_id)
     _classify(message_id, "question", 1.0)
     tail = f" {PENDING_REMINDER}" if pending_order else ""
     if answer:
@@ -366,18 +380,19 @@ async def execute(understanding: dict, *, text, state, vendor, customer, wa_id, 
         if pending_order:
             return await _execute_correction(
                 edits, text=text, pending_order=pending_order, confidence=confidence, note=note,
-                vendor=vendor, customer=customer, wa_id=wa_id, message_id=message_id, reply=reply,
-                also_question=also_question,
+                catalog=state.catalog, vendor=vendor, customer=customer, wa_id=wa_id,
+                message_id=message_id, reply=reply, also_question=also_question,
             )
         return await _execute_new_order(
-            edits, text=text, confidence=confidence, vendor=vendor, customer=customer, wa_id=wa_id,
-            message_id=message_id, reply=reply, also_question=also_question,
+            edits, text=text, confidence=confidence, catalog=state.catalog, vendor=vendor,
+            customer=customer, wa_id=wa_id, message_id=message_id, reply=reply,
+            also_question=also_question,
         )
 
     if "ask_question" in types_:
         return await _execute_question(
             text=text, vendor=vendor, customer=customer, wa_id=wa_id, message_id=message_id,
-            reply=reply, pending_order=pending_order,
+            reply=reply, pending_order=pending_order, catalog=state.catalog,
         )
 
     if "small_talk" in types_:

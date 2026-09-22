@@ -172,3 +172,29 @@ def test_no_history_falls_back_to_plain_string(mock_understanding_client):
     understand("thanks", make_state(history=None))
     call_kwargs = fake_client.models.generate_content.call_args.kwargs
     assert call_kwargs["contents"] == "thanks"
+
+
+# --- Prompt content: the small_talk / ask_question boundary that caused the live-bot bug ------
+# (A bare greeting was being classified ask_question, which has no FAQ match, so it always fell
+# through to the generic "let me check with the seller" escalation. understand()'s own plumbing
+# already handled small_talk correctly once the model says small_talk -- the tests above prove
+# that -- so the fix lives in the PROMPT's decision boundary, not the parsing. These assert the
+# clarified boundary is actually present and wired; the real proof is a live re-test, since only
+# real Gemini can be mis-swayed by prompt wording in the first place.)
+
+def test_prompt_gives_a_concrete_example_that_a_bare_greeting_is_small_talk_not_a_question():
+    prompt = __import__("understanding").build_prompt(make_state())
+    assert "hi there good morning" in prompt.lower()
+    assert "small_talk" in prompt.lower().split("hi there good morning")[1][:200]
+
+
+def test_prompt_explicitly_gives_availability_as_an_ask_question_example():
+    """The other half of the same boundary: a real catalog question must NOT be pulled toward
+    small_talk either -- it needs to reach the (now catalog-grounded) question executor."""
+    prompt = __import__("understanding").build_prompt(make_state())
+    assert "what's available" in prompt.lower() or "what do you have" in prompt.lower()
+
+
+def test_prompt_tells_the_model_not_to_invent_a_question_from_a_greeting():
+    prompt = __import__("understanding").build_prompt(make_state())
+    assert "never bundled with ask_question" in prompt or "don't invent a" in prompt

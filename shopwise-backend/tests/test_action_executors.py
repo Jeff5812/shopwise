@@ -44,6 +44,7 @@ def patch_boundaries(monkeypatch):
     monkeypatch.setattr(ex, "update_message_classification", lambda *a, **kw: None)
     monkeypatch.setattr(ex, "add_to_review_queue", lambda *a, **kw: None)
     monkeypatch.setattr(ex, "generate_faq_answer", lambda text, snippets: {"answered": False, "reply": None})
+    monkeypatch.setattr(ex, "generate_catalog_answer", lambda text, catalog: {"answered": False, "reply": None})
     monkeypatch.setattr(ex, "generate_order_confirmation", lambda items, total: f"CONFIRM:{total}")
 
 
@@ -317,3 +318,67 @@ def test_unknown_escalates_without_logging_to_history():
     assert result["status"] == "escalated_unclear"
     assert "not sure what you mean" in reply_plain.last_text
     assert reply.calls == []  # never logged to conversation history, same as the old low-confidence escalation
+
+
+# --- Question answering falls back from FAQ to the real catalog before escalating -------------
+
+def test_question_answered_by_catalog_when_faq_cannot(monkeypatch):
+    """'What's available?' with no matching FAQ snippet must still be answered, from the real
+    catalog, not escalated -- this is the exact bug from the live WhatsApp transcript."""
+    monkeypatch.setattr(ex, "generate_faq_answer", lambda text, snippets: {"answered": False, "reply": None})
+    monkeypatch.setattr(ex, "generate_catalog_answer",
+                        lambda text, catalog: {"answered": True, "reply": "We have candles, gowns and soap in stock!"})
+    reply = FakeReply()
+    result = run(ex.execute(U([A("ask_question")]), text="What's available?", state=make_state(None),
+                            vendor=VENDOR, customer=CUSTOMER, wa_id=WA_ID, message_id=MESSAGE_ID, reply=reply))
+    assert result["status"] == "question_answered"
+    assert "We have candles, gowns and soap in stock!" in reply.last_text
+    assert "Good question" not in reply.last_text
+
+
+def test_question_tries_faq_before_catalog_and_stops_if_faq_answers(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ex, "generate_faq_answer", lambda text, snippets: {"answered": True, "reply": "We deliver islandwide."})
+    monkeypatch.setattr(ex, "generate_catalog_answer", lambda text, catalog: calls.append(1) or {"answered": False, "reply": None})
+    reply = FakeReply()
+    run(ex.execute(U([A("ask_question")]), text="do you deliver?", state=make_state(None),
+                   vendor=VENDOR, customer=CUSTOMER, wa_id=WA_ID, message_id=MESSAGE_ID, reply=reply))
+    assert calls == [], "catalog lookup should be skipped once FAQ already answered"
+
+
+def test_question_escalates_only_when_neither_faq_nor_catalog_can_answer(monkeypatch):
+    monkeypatch.setattr(ex, "generate_faq_answer", lambda text, snippets: {"answered": False, "reply": None})
+    monkeypatch.setattr(ex, "generate_catalog_answer", lambda text, catalog: {"answered": False, "reply": None})
+    reply = FakeReply()
+    result = run(ex.execute(U([A("ask_question")]), text="can you reduce the price?", state=make_state(None),
+                            vendor=VENDOR, customer=CUSTOMER, wa_id=WA_ID, message_id=MESSAGE_ID, reply=reply))
+    assert result["status"] == "question_escalated"
+    assert "Good question" in reply.last_text
+
+
+def test_catalog_answer_is_grounded_in_the_real_catalog_passed_to_it(monkeypatch):
+    """The catalog handed to generate_catalog_answer must be the SAME real catalog from
+    ConversationState -- not empty, not a different vendor's, never invented."""
+    seen = {}
+    def _capture(text, catalog):
+        seen["catalog"] = catalog
+        return {"answered": False, "reply": None}
+    monkeypatch.setattr(ex, "generate_catalog_answer", _capture)
+    reply = FakeReply()
+    run(ex.execute(U([A("ask_question")]), text="what do you have?", state=make_state(None),
+                   vendor=VENDOR, customer=CUSTOMER, wa_id=WA_ID, message_id=MESSAGE_ID, reply=reply))
+    assert seen["catalog"] == REAL_SHAPE_CATALOG
+
+
+def test_new_order_plus_question_uses_catalog_fallback_too(monkeypatch):
+    """also_question on a fresh order ('2 candles, what's available?') gets the same two-source
+    answer, not just FAQ."""
+    monkeypatch.setattr(ex, "get_order_items", lambda oid: [])
+    monkeypatch.setattr(ex, "create_order", lambda vid, cid, items, mid: {"id": "order-9", "total_amount": 5000})
+    monkeypatch.setattr(ex, "generate_faq_answer", lambda text, snippets: {"answered": False, "reply": None})
+    monkeypatch.setattr(ex, "generate_catalog_answer", lambda text, catalog: {"answered": True, "reply": "We also have soap and gowns."})
+    reply = FakeReply()
+    run(ex.execute(U([A("add_item", variant_id="cand-lav-std", quantity=2), A("ask_question")]),
+                   text="2 candles, what else do you have?", state=make_state(None),
+                   vendor=VENDOR, customer=CUSTOMER, wa_id=WA_ID, message_id=MESSAGE_ID, reply=reply))
+    assert "We also have soap and gowns." in reply.last_text

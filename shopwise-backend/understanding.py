@@ -101,8 +101,15 @@ Each action's "type" is one of: {list(ACTION_TYPES)}
   {{"type": "add_item", "variant_id": <a catalog variant>, "quantity": <whole number, at least 1>}}
   {{"type": "remove_item", "variant_id": <a variant already in the pending order>}}
   {{"type": "swap_variant", "from_variant_id": <in the pending order>, "to_variant_id": <another variant of the SAME product>}}
-  {{"type": "ask_question"}}   -- delivery, pickup, payment, price, availability, timing, or anything else they ask
-  {{"type": "small_talk"}}     -- greeting, thanks, or chat that neither orders, changes, nor asks anything
+  {{"type": "ask_question"}}   -- they ask something concrete: delivery, pickup, payment, price, whether an
+                                   item is available/in stock, timing, or anything else with a real question
+                                   behind it. "What's available?", "what do you have?", "do you have X?" are
+                                   ask_question -- they are asking about the catalog, not making small talk.
+  {{"type": "small_talk"}}     -- a greeting, thanks, or chat with NO question and NO order in it. "Hi",
+                                   "good morning", "hi there good morning", "how far", "lol" are small_talk
+                                   even though they open the conversation -- a greeting alone is never a
+                                   question. Only move to ask_question/add_item once they actually ask or
+                                   order something.
   {{"type": "confirm_order"}}  -- pure agreement with the CURRENTLY waiting order (yes, yeah, ok, okay, sure,
                                    go ahead, thumbs up). Only ever valid when an order is waiting right now.
                                    A bare "okay" right after being asked to confirm IS agreement.
@@ -118,6 +125,8 @@ Rules:
 - A message can produce more than one action, e.g. "make it 2 and can I pick up?" is
   [set_quantity, ask_question]. Only change what the customer actually mentioned; leave every
   other line of the pending order alone.
+- A bare greeting is small_talk on its own, never bundled with ask_question -- don't invent a
+  question that wasn't asked just because the customer said hello.
 - If you cannot tell WHICH line or variant they mean (several items, or a colour with two
   sizes), do not guess: use only "unknown" and ask in "note".
 - Never invent a variant_id that isn't in the catalog above.
