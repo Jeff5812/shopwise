@@ -1,11 +1,10 @@
 """
-Shared fixtures for the classifier/extractor test suite.
+Shared fixtures for the backend test suite.
 
-Design: classify_message() and extract_order() are pure functions of
-(text, catalog, history) -> dict once you hand them a genai client. We never
-call the real Gemini API in tests — mock_genai_client patches classifier.client
-and order_extractor.client directly, so tests run in milliseconds and are
-deterministic regardless of model changes upstream.
+Design: understand() is a pure function of (text, ConversationState) -> dict once you hand it
+a genai client. We never call the real Gemini API in tests — mock_understanding_client patches
+understanding.client directly, so tests run in milliseconds and are deterministic regardless of
+model changes upstream.
 """
 import json
 import pytest
@@ -55,36 +54,6 @@ def _reset_circuit_breaker():
     reset_breaker_for_testing()
     yield
     reset_breaker_for_testing()
-
-
-@pytest.fixture
-def mock_classifier_client(monkeypatch):
-    """Patch classifier.client.models.generate_content to return a canned payload.
-    Usage: mock_classifier_client({"intent": "order", "confidence": 0.9})
-    """
-    import classifier
-
-    def _install(payload):
-        fake_client = MagicMock()
-        fake_client.models.generate_content.return_value = _fake_response(payload)
-        monkeypatch.setattr(classifier, "client", fake_client)
-        return fake_client
-
-    return _install
-
-
-@pytest.fixture
-def mock_extractor_client(monkeypatch):
-    """Patch order_extractor.client.models.generate_content to return a canned payload."""
-    import order_extractor
-
-    def _install(payload):
-        fake_client = MagicMock()
-        fake_client.models.generate_content.return_value = _fake_response(payload)
-        monkeypatch.setattr(order_extractor, "client", fake_client)
-        return fake_client
-
-    return _install
 
 
 @pytest.fixture

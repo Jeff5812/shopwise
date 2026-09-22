@@ -18,18 +18,23 @@ def _allowed(constraint: str) -> set:
 
 
 def test_review_queue_reasons_are_allowed():
-    # pending_order_handler.py also writes review_queue reasons, so it is checked too.
+    # action_executors.py also writes review_queue reasons, so it is checked too.
     used = set()
-    for name in ("main.py", "pending_order_handler.py"):
+    for name in ("main.py", "action_executors.py"):
         used |= set(re.findall(r'reason="([a-z_]+)"', (ROOT / name).read_text()))
     assert used, "no review reasons found — regex out of date?"
     assert used <= _allowed("review_queue_reason_check"), used - _allowed("review_queue_reason_check")
 
 
-def test_classifier_intents_are_allowed():
-    src = (ROOT / "classifier.py").read_text()
-    m = re.search(r'if intent not in \(([^)]*)\)', src)
-    used = set(re.findall(r'"([a-z_]+)"', m.group(1)))
+def test_message_intents_written_are_allowed():
+    # Replaces classifier.py (retired): intents are now written from main.py's terminal
+    # confirm/cancel branches and action_executors.py's non-terminal executors.
+    used = set()
+    for name in ("main.py", "action_executors.py"):
+        src = (ROOT / name).read_text()
+        used |= set(re.findall(r'update_message_classification\([^,]+,\s*"([a-z_]+)"', src))
+        used |= set(re.findall(r'_classify\(\s*message_id,\s*"([a-z_]+)"', src))
+    assert used, "no intents found — regex out of date?"
     assert used <= _allowed("messages_intent_check"), used - _allowed("messages_intent_check")
 
 
@@ -41,8 +46,8 @@ def test_order_statuses_written_are_allowed():
     assert used <= _allowed("orders_status_check"), used - _allowed("orders_status_check")
 
 
-def test_pending_handler_message_intents_are_allowed():
-    src = (ROOT / "pending_order_handler.py").read_text()
+def test_action_executor_message_intents_are_allowed():
+    src = (ROOT / "action_executors.py").read_text()
     used = set(re.findall(r'_classify\(message_id, "([a-z_]+)"', src))
     assert used == {"order", "question", "noise", "unclassified"}, used
     assert used <= _allowed("messages_intent_check"), used - _allowed("messages_intent_check")

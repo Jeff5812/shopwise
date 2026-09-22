@@ -20,7 +20,7 @@ def test_category15_customer_order_history_query():
     raise AssertionError("customer order history query not implemented")
 
 
-@pytest.mark.xfail(reason="Category 11: negotiation is escalate-only, no counter-offer logic exists", strict=False)
+@pytest.mark.xfail(reason="Category 11: negotiation is escalate-only, no counter-offer action type exists", strict=False)
 def test_category11_negotiation_counter_offer():
-    from classifier import generate_counter_offer  # does not exist yet
+    from actions import generate_counter_offer  # does not exist yet
     raise AssertionError("counter-offer negotiation logic not implemented")

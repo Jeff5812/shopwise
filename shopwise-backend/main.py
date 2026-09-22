@@ -15,10 +15,6 @@ from db import (
     get_conversation_history,
     update_message_classification,
     add_to_review_queue,
-    get_vendor_catalog,
-    get_faq_snippets,
-    create_order,
-    InsufficientStockError,
     get_pending_order,
     get_cancellable_order,
     get_order,
@@ -33,11 +29,10 @@ from db import (
     set_order_awaiting_email,
     get_order_awaiting_email,
 )
-from classifier import classify_message
-from order_extractor import extract_order, EXTRACTION_CONFIDENCE_THRESHOLD
-from reply_generator import generate_order_confirmation, generate_faq_answer
-from pending_understanding import understand_pending_order
-from pending_order_handler import handle_pending_followup
+from conversation_state import ConversationState, load_state
+from understanding import understand
+from actions import terminal_type
+from action_executors import execute
 from paystack_service import PaystackService
 from payment_service import create_payment_for_order, process_webhook_charge_success
 from email_capture import extract_email, looks_like_cancel, EMAIL_REQUEST, EMAIL_REQUEST_RETRY
@@ -61,8 +56,6 @@ PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.getenv("WHATSAPP_SYSTEM_USER_TOKEN")
 GRAPH_VERSION = os.getenv("GRAPH_API_VERSION", "v25.0")
 PAYSTACK_DEFAULT_EMAIL = os.getenv("PAYSTACK_DEFAULT_EMAIL")
-
-CONFIDENCE_THRESHOLD = 0.6  # below this, escalate to review queue regardless of intent
 
 FALLBACK_REPLY = "Sorry, I'm having a little trouble right now. The seller will get back to you shortly."
 
@@ -211,9 +204,9 @@ async def receive_message(request: Request):
                 email, logged_message["id"], intro,
             )
 
-        # Pending confirmation check comes BEFORE the general intent classifier.
-        # If this customer has an order sitting at awaiting_confirmation, their reply is
-        # almost certainly answering that, not starting something new, so it gets checked first.
+        # Pending confirmation check stays BEFORE the general understanding call. Its 30-minute
+        # freshness window is what confirm_order is allowed to act on. cancel_order does NOT need
+        # this: it's resolved separately below via get_cancellable_order(), which has no age cutoff.
         # Guarded like every other external call in this handler — a transient Supabase error
         # here must not crash the whole webhook and strand the message at intent=null forever.
         try:
@@ -221,195 +214,89 @@ async def receive_message(request: Request):
         except Exception as e:
             print("get_pending_order failed, treating as no pending order:", e)
             pending_order = None
-        if pending_order:
-            try:
-                understanding = understand_pending_order(
-                    text, pending_order, vendor, customer, logged_message["id"])
-            except Exception as e:
-                print("Pending-order understanding failed:", e)
-                understanding = {"action": "other"}
-            action = understanding["action"]
 
-            if action == "confirm":
-                try:
-                    mark_pending_payment(pending_order["id"])
-                except Exception as e:
-                    # This was the missing guard. mark_pending_payment() was the one remaining
-                    # unguarded external call in this whole branch — a transient Supabase blip
-                    # here crashes straight through to a raw 500 with zero reply, and critically
-                    # leaves the order stuck at 'awaiting_confirmation' (never even reaches
-                    # pending_payment). That means get_pending_order() keeps matching it on every
-                    # later message, so understand_pending_order correctly says "other" for
-                    # "Where do I pay?" and the customer just keeps hearing "still waiting on a
-                    # yes or no" to a question they already answered. Live evidence: "Yeah Confirm"
-                    # got no reply at all, then two later unrelated messages both got the exact
-                    # same canned escalation reply — only possible if the order never left
-                    # awaiting_confirmation in the first place.
-                    print("mark_pending_payment failed:", e)
-                    add_to_review_queue(logged_message["id"], reason="confirm_failed")
-                    await reply_and_log(
-                        vendor["id"], customer["id"], sender_wa_id,
-                        "I hit a snag confirming that. Could you try replying 'confirm' one more time? "
-                        "If it still doesn't go through, I'll make sure the seller sees it."
-                    )
-                    return {"status": "confirm_failed", "order_id": pending_order["id"]}
-                update_message_classification(logged_message["id"], "order", 1.0)
-                customer_email = customer.get("email")
-                if not customer_email:
-                    # No email on file: ask for it now, only because we're about to generate the
-                    # payment link. If we can't even record that we asked, don't block the
-                    # customer — fall back to the default email below.
-                    try:
-                        set_order_awaiting_email(pending_order["id"], True)
-                        await reply_and_log(vendor["id"], customer["id"], sender_wa_id, EMAIL_REQUEST)
-                        return {"status": "awaiting_customer_email", "order_id": pending_order["id"]}
-                    except Exception as e:
-                        print("Could not ask for email, using default fallback:", e)
-                        try:
-                            set_order_awaiting_email(pending_order["id"], False)
-                        except Exception:
-                            pass
-                customer_email = customer_email or PAYSTACK_DEFAULT_EMAIL
-                if not customer_email:
-                    add_to_review_queue(logged_message["id"], reason="missing_email_for_payment")
-                    await reply_and_log(
-                        vendor["id"], customer["id"], sender_wa_id,
-                        "Your order is confirmed! I just need an email address to send your payment link. Could you share one?"
-                    )
-                    return {"status": "order_pending_payment_missing_email", "order_id": pending_order["id"]}
-                return await issue_payment_link(
-                    vendor["id"], customer["id"], sender_wa_id, pending_order["id"],
-                    customer_email, logged_message["id"],
-                    "Perfect, your order is confirmed. Please complete payment here:",
-                )
-
-            elif action == "cancel":
-                try:
-                    cancel_order(pending_order["id"])
-                except Exception as e:
-                    print("cancel_order failed:", e)
-                    add_to_review_queue(logged_message["id"], reason="cancel_failed")
-                    await reply_and_log(
-                        vendor["id"], customer["id"], sender_wa_id,
-                        "I hit a snag cancelling that. I've flagged it for the seller to sort out."
-                    )
-                    return {"status": "cancel_failed", "order_id": pending_order["id"]}
-                update_message_classification(logged_message["id"], "order", 1.0)
-                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "No problem at all, that order has been canceled.")
-                return {"status": "order_canceled", "order_id": pending_order["id"]}
-
-            else:
-                # Anything that isn't a plain confirm/cancel (correction, question, casual chat,
-                # unclear) is delegated. The pending order is preserved in every case and is never
-                # auto-confirmed here, see pending_order_handler.py.
-                return await handle_pending_followup(
-                    action,
-                    text=text,
-                    pending_order=pending_order,
-                    vendor=vendor,
-                    customer=customer,
-                    wa_id=sender_wa_id,
-                    message_id=logged_message["id"],
-                    reply=reply_and_log,
-                    understanding=understanding,
-                )
-
-        # Fetch recent conversation history once here — both the intent classifier and the order
-        # extractor need it, since neither call was seeing anything beyond the current message before.
-        history = get_conversation_history(vendor["id"], customer["id"], exclude_message_id=logged_message["id"])
-
-        # Classification can fail transiently (model overloaded, network blip) — never crash the webhook for it
         try:
-            classification = classify_message(text, history)
-            intent = classification["intent"]
-            confidence = classification["confidence"]
+            state = load_state(vendor, customer, pending_order, exclude_message_id=logged_message["id"])
         except Exception as e:
-            print("Classification failed, treating as unclassified:", e)
-            intent = "unclassified"
-            confidence = 0.0
+            print("load_state failed, using a minimal fallback state:", e)
+            state = ConversationState(
+                vendor_id=vendor["id"], customer_id=customer["id"], pending_order=pending_order,
+                lines=[], catalog=[], history=[],
+                awaiting="confirmation" if pending_order else None,
+            )
 
-        update_message_classification(logged_message["id"], intent, confidence)
+        # ONE centralized understanding call, whether or not an order is pending — see
+        # understanding.py. Failure here degrades to "unknown", same as every other AI call.
+        try:
+            result = understand(text, state)
+        except Exception as e:
+            print("Understanding failed:", e)
+            result = {"actions": [{"type": "unknown"}], "confidence": 0.0, "note": None}
 
-        # Low confidence always escalates, regardless of what intent it guessed
-        if confidence < CONFIDENCE_THRESHOLD or intent == "unclassified":
-            add_to_review_queue(logged_message["id"], reason="low_confidence")
-            # Pure boilerplate — sent via plain send_whatsapp_message, NOT reply_and_log. Logging this
-            # to history was causing a real regression: at temperature 0, showing the model its own
-            # prior hedging as recent context biased later classification toward repeating it, even
-            # on unambiguous messages. Real, informative replies still go through reply_and_log below.
-            await send_whatsapp_message(sender_wa_id, "Thanks for reaching out. Let me just check on this and I'll come right back to you.")
-            return {"status": "escalated_low_confidence"}
+        actions = result["actions"]
+        confidence = result["confidence"]
+        term = terminal_type(actions)
 
-        # Branch by intent — negotiation logic is still a stub for now
-        if intent == "order":
+        if term == "confirm_order":
+            # pending_order is guaranteed non-None here: understanding.py always strips
+            # confirm_order when state.pending_order is None, and apply_policy() never invents
+            # actions the model didn't propose.
             try:
-                catalog = get_vendor_catalog(vendor["id"])
-                print(f"DEBUG catalog for vendor {vendor['id']}: {[p.get('name') for p in catalog]}")
-                extraction = extract_order(text, catalog, history)
-                print(f"DEBUG extraction result: {extraction}")
-                line_items = extraction["line_items"]
-                extraction_confidence = extraction["confidence"]
+                mark_pending_payment(pending_order["id"])
             except Exception as e:
-                print("Order extraction failed:", e)
-                line_items, extraction_confidence = [], 0.0
-
-            if not line_items or extraction_confidence < EXTRACTION_CONFIDENCE_THRESHOLD:
-                add_to_review_queue(logged_message["id"], reason="unparseable")
-                # If the model told us WHY it couldn't extract (e.g. multiple variants, nothing
-                # to disambiguate size/color), surface that instead of a generic reply — otherwise
-                # the customer has no idea what's actually being asked of them.
-                ambiguous_note = extraction.get("ambiguous_note") if "extraction" in locals() else None
-                if ambiguous_note:
-                    clarify_reply = f"{ambiguous_note} Could you clarify so I can get this exactly right?"
-                else:
-                    clarify_reply = (
-                        "I want to get your order exactly right. What would you like, and how many? "
-                        "(something like '2 lavender candles' works perfectly)"
-                    )
-                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, clarify_reply)
-            else:
+                # mark_pending_payment() is the one remaining external call on this path — a
+                # transient blip here must not strand the order at awaiting_confirmation forever
+                # (see the git history on this line for the live incident that first caught this).
+                print("mark_pending_payment failed:", e)
+                add_to_review_queue(logged_message["id"], reason="confirm_failed")
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
+                    "I hit a snag confirming that. Could you try replying 'confirm' one more time? "
+                    "If it still doesn't go through, I'll make sure the seller sees it."
+                )
+                return {"status": "confirm_failed", "order_id": pending_order["id"]}
+            update_message_classification(logged_message["id"], "order", 1.0)
+            customer_email = customer.get("email")
+            if not customer_email:
+                # No email on file: ask for it now, only because we're about to generate the
+                # payment link. If we can't even record that we asked, don't block the
+                # customer — fall back to the default email below.
                 try:
-                    order = create_order(vendor["id"], customer["id"], line_items, logged_message["id"])
-                except InsufficientStockError as e:
-                    print("Order rejected, insufficient stock:", e)
-                    add_to_review_queue(logged_message["id"], reason="insufficient_stock")
-                    await reply_and_log(
-                        vendor["id"], customer["id"], sender_wa_id,
-                        "Sorry, I don't have enough of that in stock right now. I've let the seller "
-                        "know in case more is coming, but I can't confirm that order yet."
-                    )
-                    return {"status": "insufficient_stock"}
-                try:
-                    reply_text = generate_order_confirmation(line_items, order["total_amount"])
+                    set_order_awaiting_email(pending_order["id"], True)
+                    await reply_and_log(vendor["id"], customer["id"], sender_wa_id, EMAIL_REQUEST)
+                    return {"status": "awaiting_customer_email", "order_id": pending_order["id"]}
                 except Exception as e:
-                    print("Confirmation generation failed, using plain fallback:", e)
-                    items_text = ", ".join(f"{i['quantity']} x {i['product_name']}" for i in line_items)
-                    reply_text = f"That's {items_text}, coming to \u20a6{order['total_amount']:.0f} total. Shall I confirm this for you?"
-                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, reply_text)
-        elif intent == "question":
-            try:
-                faq_snippets = get_faq_snippets(vendor["id"])
-                faq_result = generate_faq_answer(text, faq_snippets)
-            except Exception as e:
-                print("FAQ answering failed:", e)
-                faq_result = {"answered": False, "reply": None}
+                    print("Could not ask for email, using default fallback:", e)
+                    try:
+                        set_order_awaiting_email(pending_order["id"], False)
+                    except Exception:
+                        pass
+            customer_email = customer_email or PAYSTACK_DEFAULT_EMAIL
+            if not customer_email:
+                add_to_review_queue(logged_message["id"], reason="missing_email_for_payment")
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
+                    "Your order is confirmed! I just need an email address to send your payment link. Could you share one?"
+                )
+                return {"status": "order_pending_payment_missing_email", "order_id": pending_order["id"]}
+            return await issue_payment_link(
+                vendor["id"], customer["id"], sender_wa_id, pending_order["id"],
+                customer_email, logged_message["id"],
+                "Perfect, your order is confirmed. Please complete payment here:",
+            )
 
-            if faq_result["answered"] and faq_result["reply"]:
-                await reply_and_log(vendor["id"], customer["id"], sender_wa_id, faq_result["reply"])
-            else:
-                add_to_review_queue(logged_message["id"], reason="unparseable")
-                # Same reasoning as the classifier escalation above — pure boilerplate, don't let it
-                # bias future turns toward more hedging.
-                await send_whatsapp_message(sender_wa_id, "Good question. Let me check with the seller and get right back to you.")
-        elif intent == "negotiation":
-            add_to_review_queue(logged_message["id"], reason="negotiation_below_floor")
-            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "I hear you. Let me see what I can work out on that and I'll get back to you shortly.")
-        elif intent == "cancel":
-            cancellable_order = None
-            try:
-                cancellable_order = get_cancellable_order(vendor["id"], customer["id"])
-            except Exception as e:
-                print("get_cancellable_order failed:", e)
+        if term == "cancel_order":
+            # Resolved broadly, not just against the freshly-pending order above: covers an order
+            # outside the 30-minute confirm window too (get_cancellable_order has no age cutoff).
+            # This is the one place the AI's belief about "is anything pending" is deliberately
+            # NOT trusted — it only ever reports intent, the backend decides what's real.
+            cancellable_order = pending_order
+            if not cancellable_order:
+                try:
+                    cancellable_order = get_cancellable_order(vendor["id"], customer["id"])
+                except Exception as e:
+                    print("get_cancellable_order failed:", e)
+                    cancellable_order = None
 
             if not cancellable_order:
                 # Nothing unpaid to cancel — either there's no order at all, or they're asking
@@ -421,30 +308,34 @@ async def receive_message(request: Request):
                     "I don't see an active unpaid order to cancel. If you already paid, let me "
                     "flag the seller to help with that instead."
                 )
-            else:
-                try:
-                    cancel_order(cancellable_order["id"])
-                except Exception as e:
-                    print("cancel_order failed:", e)
-                    add_to_review_queue(logged_message["id"], reason="cancel_failed")
-                    await reply_and_log(
-                        vendor["id"], customer["id"], sender_wa_id,
-                        "I hit a snag cancelling that. I've flagged it for the seller to sort out."
-                    )
-                else:
-                    # Deliberate scope decision: if "cancel the last one, I want X instead" came in
-                    # as one message, only the cancel is handled here. The new item isn't extracted
-                    # from the same message — ask for it as a separate, unambiguous follow-up rather
-                    # than guessing at two intents out of one message.
-                    await reply_and_log(
-                        vendor["id"], customer["id"], sender_wa_id,
-                        "Done, that order's been canceled. Let me know if you'd like to order "
-                        "something else."
-                    )
-        elif intent == "noise":
-            await reply_and_log(vendor["id"], customer["id"], sender_wa_id, "Hey! What can I help you find today?")
+                return {"status": "cancel_no_matching_order"}
 
-        return {"status": "processed", "intent": intent, "confidence": confidence}
+            try:
+                cancel_order(cancellable_order["id"])
+            except Exception as e:
+                print("cancel_order failed:", e)
+                add_to_review_queue(logged_message["id"], reason="cancel_failed")
+                await reply_and_log(
+                    vendor["id"], customer["id"], sender_wa_id,
+                    "I hit a snag cancelling that. I've flagged it for the seller to sort out."
+                )
+                return {"status": "cancel_failed", "order_id": cancellable_order["id"]}
+            update_message_classification(logged_message["id"], "order", 1.0)
+            await reply_and_log(
+                vendor["id"], customer["id"], sender_wa_id,
+                "Done, that order's been canceled. Let me know if you'd like to order something else."
+            )
+            return {"status": "order_canceled", "order_id": cancellable_order["id"]}
+
+        # Everything else — new order, correction, question, small talk, ambiguous — goes through
+        # the executors, which re-validate against the real order/catalog before touching the DB.
+        # The pending order (if any) is preserved in every case and is never auto-confirmed here.
+        exec_result = await execute(
+            result, text=text, state=state, vendor=vendor, customer=customer,
+            wa_id=sender_wa_id, message_id=logged_message["id"],
+            reply=reply_and_log, reply_plain=send_whatsapp_message,
+        )
+        return {"status": exec_result.get("status", "processed"), "confidence": confidence}
 
     except (KeyError, IndexError) as e:
         print("Webhook parse error (likely a non-message event):", e)

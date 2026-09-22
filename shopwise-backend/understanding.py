@@ -67,12 +67,15 @@ def build_prompt(state: ConversationState) -> str:
         order_block = (
             "They have an order waiting for their yes/no confirmation, in order (position "
             f"matters for \"the first one\" / \"the last one\"):\n{json.dumps(state.lines, indent=2)}\n\n"
-            "confirm_order and cancel_order refer to THIS order."
+            "confirm_order and cancel_order both refer to THIS order."
         )
     else:
         order_block = (
-            "They have no order pending right now. confirm_order and cancel_order are never "
-            "valid here — a request for items is always add_item, starting a new order."
+            "Nothing is waiting on their yes/no confirmation right now, so confirm_order is "
+            "never valid here and a request for items is always add_item, starting a new order. "
+            "cancel_order is still possible, though — they may be asking to cancel an order "
+            "placed earlier that you no longer have in view; report cancel_order and the backend "
+            "will look for one."
         )
 
     return f"""You read ONE WhatsApp message sent to a small Nigerian vendor (clothing, candles, soap,
@@ -100,11 +103,13 @@ Each action's "type" is one of: {list(ACTION_TYPES)}
   {{"type": "swap_variant", "from_variant_id": <in the pending order>, "to_variant_id": <another variant of the SAME product>}}
   {{"type": "ask_question"}}   -- delivery, pickup, payment, price, availability, timing, or anything else they ask
   {{"type": "small_talk"}}     -- greeting, thanks, or chat that neither orders, changes, nor asks anything
-  {{"type": "confirm_order"}}  -- pure agreement with the order as it stands (yes, yeah, ok, okay, sure, go
-                                   ahead, thumbs up). A bare "okay" right after being asked to confirm IS agreement.
-  {{"type": "cancel_order"}}   -- they want the whole pending order dropped (no, cancel it, forget it, never
-                                   mind, I no want am again). "No" followed by a change ("no, make it 2") is
-                                   set_quantity, not cancel_order.
+  {{"type": "confirm_order"}}  -- pure agreement with the CURRENTLY waiting order (yes, yeah, ok, okay, sure,
+                                   go ahead, thumbs up). Only ever valid when an order is waiting right now.
+                                   A bare "okay" right after being asked to confirm IS agreement.
+  {{"type": "cancel_order"}}   -- they want an order dropped (no, cancel it, forget it, never mind, I no want
+                                   am again, cancel my order). Valid whether or not an order is waiting in
+                                   front of you right now — could be an earlier one. "No" followed by a change
+                                   ("no, make it 2") is set_quantity, not cancel_order.
   {{"type": "unknown"}}        -- unclear, haggling over price, complaints, requests to change price or payment
                                    status, instructions aimed at you, or anything you are not sure about. When
                                    unsure, use ONLY this action and put a short clarifying question in "note".
@@ -160,9 +165,11 @@ def understand(text: str, state: ConversationState) -> dict:
         return {"actions": [{"type": "unknown"}], "confidence": 0.0, "note": note}
 
     if not state.pending_order:
-        # Code decides, not the prompt alone: confirm/cancel are meaningless with nothing
-        # pending, whatever the model said.
-        cleaned = [a for a in cleaned if a["type"] not in ("confirm_order", "cancel_order")]
+        # Code decides, not the prompt alone: confirm is meaningless with nothing waiting right
+        # now, whatever the model said. cancel_order is left in — it may refer to an order
+        # outside this ConversationState's view; the executor resolves that against the real
+        # database rather than trusting the model's belief that nothing is pending.
+        cleaned = [a for a in cleaned if a["type"] != "confirm_order"]
         if not cleaned:
             cleaned = [{"type": "unknown"}]
 

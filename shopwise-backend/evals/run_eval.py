@@ -12,11 +12,13 @@ Grades how well the pending-order assistant understands customers, using REAL Ge
 
 It never touches Supabase or WhatsApp: the database layer is faked and db.supabase is replaced
 with a tripwire that raises if anything reaches for it. The product code under test is the real
-understand_pending_order (one real Gemini call) + the real pending_order_handler (so validation, price lookup and reply
-logic are exercised exactly as in production).
+understanding.understand (one real Gemini call) + the real action_executors (so validation,
+price lookup and reply logic are exercised exactly as in production).
 
 COUPLING NOTE: predict() below is the ONLY place this file depends on how the product is wired.
-If the understanding layer is redesigned, adapt predict() and the bank/scoring stay untouched.
+Adapted for the centralized understanding.py + action_executors.py architecture (previously
+pending_understanding.py + pending_order_handler.py, now retired) — the bank/scoring below this
+point is untouched.
 """
 import os
 import sys
@@ -34,8 +36,10 @@ os.environ["SUPABASE_URL"] = "https://eval.invalid"
 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.eval"
 
 import db  # noqa: E402
-import pending_understanding as pu  # noqa: E402
-import pending_order_handler as poh  # noqa: E402
+import understanding as un  # noqa: E402
+import action_executors as ax  # noqa: E402
+from actions import terminal_type  # noqa: E402
+from conversation_state import ConversationState  # noqa: E402
 from evals.scenarios import SCENARIOS, STATES, CATALOG, PRICES  # noqa: E402
 
 
@@ -46,17 +50,14 @@ class _DbTripwire:
 
 db.supabase = _DbTripwire()
 
-# Pending-response label -> outcome kind for the labels the handler does not process itself
-_LABEL_KIND = {"confirm": "confirm", "cancel": "cancel"}
-
-# Handler status -> outcome kind
+# Executor status -> outcome kind
 _STATUS_KIND = {
     "pending_order_correction_would_empty": "modify_empty",
     "pending_order_correction_unclear": "unclear",
-    "escalated_pending_order_unclear": "unclear",
-    "pending_order_question_answered": "question",
-    "pending_order_question_escalated": "question",
-    "pending_order_casual": "casual",
+    "escalated_unclear": "unclear",
+    "question_answered": "question",
+    "question_escalated": "question",
+    "small_talk": "casual",
 }
 
 
@@ -78,7 +79,7 @@ def predict(sc) -> dict:
          "raw_text": f"That's {_names(lines)}, coming to \u20a6{total} total. Shall I confirm this for you?"},
     ]
     order_rows = lambda oid: [{"product_variant_id": v, "quantity": q, "unit_price": PRICES[v]} for v, q in lines]
-    catalog = lambda vid: json.loads(json.dumps(CATALOG))
+    catalog_list = json.loads(json.dumps(CATALOG))
 
     def fake_replace(order_id, items):
         world["applied"] = {i["variant_id"]: i["quantity"] for i in items}
@@ -87,29 +88,39 @@ def predict(sc) -> dict:
     async def capture_reply(vendor_id, customer_id, wa_id, body):
         world["reply"] = body
 
+    async def capture_reply_plain(wa_id, body):
+        world["reply"] = body
+
+    state = ConversationState(
+        vendor_id="v1", customer_id="c1",
+        pending_order={"id": "o1", "status": "awaiting_confirmation"},
+        lines=[{"variant_id": v, "quantity": q} for v, q in lines],
+        catalog=catalog_list, history=history, awaiting="confirmation",
+    )
+
     # 1) the single understanding call (real Gemini), retried on transient API errors
-    understanding, last = None, None
-    with patch.multiple(pu, get_vendor_catalog=catalog, get_order_items=order_rows,
-                        get_conversation_history=lambda *a, **k: history):
-        for attempt in range(3):
-            try:
-                understanding = pu.understand_pending_order(
-                    sc.text, {"id": "o1"}, {"id": "v1"}, {"id": "c1"}, "m1")
-                break
-            except Exception as e:
-                last = e
-                time.sleep(2 * (attempt + 1))
-    if understanding is None:
+    result, last = None, None
+    for attempt in range(3):
+        try:
+            result = un.understand(sc.text, state)
+            break
+        except Exception as e:
+            last = e
+            time.sleep(2 * (attempt + 1))
+    if result is None:
         return {"kind": "error", "error": repr(last), "label": None}
 
-    label = understanding["action"]
-    if label in _LABEL_KIND:
-        return {"kind": _LABEL_KIND[label], "label": label, "interp": understanding}
+    label = ",".join(a["type"] for a in result["actions"])
+    term = terminal_type(result["actions"])
+    if term == "confirm_order":
+        return {"kind": "confirm", "label": label, "interp": result}
+    if term == "cancel_order":
+        return {"kind": "cancel", "label": label, "interp": result}
 
-    # 2) the real handler (business rules) over a faked database
+    # 2) the real executor (business rules) over a faked database
     with patch.multiple(
-        poh,
-        get_vendor_catalog=catalog,
+        ax,
+        get_vendor_catalog=lambda vid: catalog_list,
         get_order_items=order_rows,
         get_faq_snippets=lambda vid: [],
         replace_order_items=fake_replace,
@@ -117,12 +128,12 @@ def predict(sc) -> dict:
         update_message_classification=lambda *a, **k: None,
         generate_order_confirmation=lambda items, total: "(confirmation text)",
     ):
-        status = asyncio.run(poh.handle_pending_followup(
-            label, text=sc.text, pending_order={"id": "o1"}, vendor={"id": "v1"}, customer={"id": "c1"},
-            wa_id="2340000000000", message_id="m1", reply=capture_reply, understanding=understanding,
+        status = asyncio.run(ax.execute(
+            result, text=sc.text, state=state, vendor={"id": "v1"}, customer={"id": "c1"},
+            wa_id="2340000000000", message_id="m1", reply=capture_reply, reply_plain=capture_reply_plain,
         ))["status"]
 
-    base = {"label": label, "status": status, "interp": understanding, "reply": world["reply"]}
+    base = {"label": label, "status": status, "interp": result, "reply": world["reply"]}
     if status == "pending_order_corrected":
         return {**base, "kind": "modify", "lines": world["applied"]}
     if status == "pending_order_correction_no_change":
@@ -174,7 +185,7 @@ def _install_pacer(rpm: float):
     """Wraps generate_content on the clients the product uses (eval-only; production untouched)."""
     pacer = _Pacer(rpm)
     seen = set()
-    for holder in (pu,):
+    for holder in (un,):
         models = holder.client.models
         if id(models) in seen:
             continue

@@ -323,34 +323,36 @@ async def _execute_small_talk(*, text, vendor, customer, wa_id, message_id, repl
     return {"status": "small_talk"}
 
 
-async def _execute_unknown(*, note, vendor, customer, wa_id, message_id, reply, pending_order):
+async def _execute_unknown(*, note, vendor, customer, wa_id, message_id, reply_plain, pending_order):
+    """Deliberately sent WITHOUT logging to conversation history (reply_plain, not reply): a
+    temperature-0 understanding call that sees its own prior hedging as recent context was
+    previously found to bias later turns toward repeating "unknown" even on unambiguous
+    messages. Same reasoning the old low-confidence classifier escalation used."""
     _classify(message_id, "unclassified", 0.0)
     _flag(message_id, reason="unparseable")
-    if pending_order:
-        lead = note or "I want to make sure I get this right, so I've flagged your message to the seller."
-        tail = (" In the meantime, reply 'yes' to confirm your order, 'no' to cancel, or tell me "
-                "what you'd like to change.")
-    else:
-        lead = note or "I want to make sure I get this right, so I've flagged your message to the seller."
-        tail = ""
-    await reply(vendor["id"], customer["id"], wa_id, f"{lead}{tail}")
+    tail = (" In the meantime, reply 'yes' to confirm your order, 'no' to cancel, or tell me "
+            "what you'd like to change.") if pending_order else ""
+    lead = note or "I want to make sure I get this right, so I've flagged your message to the seller."
+    await reply_plain(wa_id, f"{lead}{tail}")
     return {"status": "escalated_unclear"}
 
 
 # ---------------------------------------------------------------------------------------------
 # Single entry point from main.py
 # ---------------------------------------------------------------------------------------------
-async def execute(understanding: dict, *, text, state, vendor, customer, wa_id, message_id, reply):
+async def execute(understanding: dict, *, text, state, vendor, customer, wa_id, message_id, reply, reply_plain=None):
     """Carries out a NON-terminal action list from understanding.understand().
 
     `state` is the ConversationState that understanding was produced from (tells us whether an
-    order is pending). `reply` is main.reply_and_log (send + log), injected to avoid a circular
-    import, same pattern pending_order_handler.py used.
+    order is pending). `reply` is main.reply_and_log (send + log). `reply_plain` is
+    main.send_whatsapp_message (send only, no history log) and is only used for the "unknown"
+    escalation reply — defaults to `reply` if not given, purely so tests can pass one callback.
 
     main.py must check actions.terminal_type() BEFORE calling this — a lone confirm_order or
     cancel_order never reaches here; apply_policy() guarantees they never arrive mixed with
     anything else either, so this function never has to reason about payment state.
     """
+    reply_plain = reply_plain or (lambda wa_id, body: reply(vendor["id"], customer["id"], wa_id, body))
     actions = understanding["actions"]
     confidence = understanding.get("confidence", 0.0)
     note = understanding.get("note")
@@ -386,5 +388,5 @@ async def execute(understanding: dict, *, text, state, vendor, customer, wa_id, 
 
     return await _execute_unknown(
         note=note, vendor=vendor, customer=customer, wa_id=wa_id, message_id=message_id,
-        reply=reply, pending_order=pending_order,
+        reply_plain=reply_plain, pending_order=pending_order,
     )

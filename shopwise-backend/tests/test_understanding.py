@@ -31,10 +31,18 @@ def test_no_pending_small_talk(mock_understanding_client):
 
 
 def test_no_pending_confirm_is_stripped_even_if_model_sends_it(mock_understanding_client):
-    # Code decides, not the prompt alone: confirm/cancel are meaningless with nothing pending.
+    # Code decides, not the prompt alone: confirm is meaningless with nothing waiting right now.
     mock_understanding_client({"actions": [{"type": "confirm_order"}], "confidence": 0.9, "note": None})
     result = understand("yes", make_state())
     assert types(result) == ["unknown"]
+
+
+def test_no_pending_cancel_is_preserved_for_the_executor_to_resolve(mock_understanding_client):
+    # Unlike confirm, cancel may refer to an order outside this state's view (older than the
+    # 30-minute "fresh pending" window) — the executor looks it up, not this module.
+    mock_understanding_client({"actions": [{"type": "cancel_order"}], "confidence": 0.9, "note": None})
+    result = understand("please cancel my order", make_state())
+    assert types(result) == ["cancel_order"]
 
 
 # --- Pending order: corrections, confirm/cancel, compound messages -------------------------

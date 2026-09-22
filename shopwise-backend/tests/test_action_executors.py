@@ -294,11 +294,26 @@ def test_small_talk_with_pending_keeps_reminder():
     assert ex.PENDING_REMINDER in reply.last_text
 
 
-def test_unknown_escalates():
+class FakeReplyPlain:
+    """Collects (wa_id, body) calls, standing in for main.send_whatsapp_message."""
+    def __init__(self):
+        self.calls = []
+
+    async def __call__(self, wa_id, body):
+        self.calls.append((wa_id, body))
+
+    @property
+    def last_text(self):
+        return self.calls[-1][1]
+
+
+def test_unknown_escalates_without_logging_to_history():
     reply = FakeReply()
+    reply_plain = FakeReplyPlain()
     state = make_state(pending_order=None)
     understanding = U([A("unknown")], confidence=0.0, note="not sure what you mean")
     result = run(ex.execute(understanding, text="???", state=state, vendor=VENDOR, customer=CUSTOMER,
-                            wa_id=WA_ID, message_id=MESSAGE_ID, reply=reply))
+                            wa_id=WA_ID, message_id=MESSAGE_ID, reply=reply, reply_plain=reply_plain))
     assert result["status"] == "escalated_unclear"
-    assert "not sure what you mean" in reply.last_text
+    assert "not sure what you mean" in reply_plain.last_text
+    assert reply.calls == []  # never logged to conversation history, same as the old low-confidence escalation
