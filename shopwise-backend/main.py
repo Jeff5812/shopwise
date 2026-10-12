@@ -35,6 +35,7 @@ from actions import terminal_type
 from action_executors import execute
 from paystack_service import PaystackService
 from payment_service import create_payment_for_order, process_webhook_charge_success
+from payment_notifications import build_customer_receipt, build_seller_alert
 from email_capture import extract_email, looks_like_cancel, EMAIL_REQUEST, EMAIL_REQUEST_RETRY
 
 load_dotenv()
@@ -379,9 +380,30 @@ async def paystack_webhook(request: Request):
 
     payload = await request.json()
     if payload.get("event") == "charge.success":
-        process_webhook_charge_success(payload["data"])
+        paid_order_id = process_webhook_charge_success(payload["data"])
+        if paid_order_id:
+            # Only the call that actually flipped the payment to paid gets here, so Paystack's
+            # retries can never produce a second notification.
+            await notify_payment_received(paid_order_id)
 
     return {"status": "ok"}
+
+
+async def notify_payment_received(order_id: str):
+    """Tells the customer their payment landed and, if SELLER_NOTIFY_WA_ID is set, alerts the seller.
+    Everything is built from database rows; a failure here is logged and never fails the webhook
+    (the payment is already recorded, and Paystack would only retry into a no-op)."""
+    try:
+        order = get_order(order_id)
+        customer = get_customer(order["customer_id"])
+        if customer and customer.get("wa_id"):
+            await reply_and_log(order["vendor_id"], customer["id"], customer["wa_id"],
+                                build_customer_receipt(order))
+        seller_wa_id = os.getenv("SELLER_NOTIFY_WA_ID")
+        if seller_wa_id:
+            await send_whatsapp_message(seller_wa_id, build_seller_alert(order, customer))
+    except Exception as e:
+        print("notify_payment_received failed:", e)
 
 
 # --- Dashboard-facing API ---
