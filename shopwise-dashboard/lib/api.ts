@@ -51,3 +51,16 @@ export function updateStock(variantId: string, stockQuantity: number) {
 export function resolveReviewItem(itemId: string) {
   return request(`/review-queue/${itemId}/resolve`, { method: 'POST' });
 }
+
+export type NewProduct = {
+  vendor_id: string;
+  name: string;
+  cost_price: number;
+  sell_price: number;
+  floor_price?: number;
+  variants: { size?: string; color?: string; stock_quantity: number }[];
+};
+
+export function createProduct(product: NewProduct) {
+  return request('/products', { method: 'POST', body: JSON.stringify(product) });
+}

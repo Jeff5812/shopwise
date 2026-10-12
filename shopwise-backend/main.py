@@ -3,7 +3,8 @@ import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from typing import Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
 
 from db import (
@@ -25,6 +26,8 @@ from db import (
     get_review_queue,
     resolve_review_queue,
     adjust_stock,
+    create_product,
+    DuplicateProductError,
     set_customer_email,
     set_order_awaiting_email,
     get_order_awaiting_email,
@@ -412,6 +415,64 @@ async def notify_payment_received(order_id: str):
 
 class StockUpdate(BaseModel):
     stock_quantity: int
+
+
+class VariantIn(BaseModel):
+    size: Optional[str] = None
+    color: Optional[str] = None
+    stock_quantity: int = Field(ge=0)
+
+    @field_validator("size", "color")
+    @classmethod
+    def blank_to_none(cls, v):
+        v = (v or "").strip()
+        return v or None
+
+
+class ProductCreate(BaseModel):
+    vendor_id: str
+    name: str = Field(min_length=1, max_length=120)
+    cost_price: float = Field(ge=0)
+    sell_price: float = Field(gt=0)
+    floor_price: Optional[float] = Field(default=None, ge=0)  # defaults to sell_price: no discounting
+    variants: list[VariantIn] = Field(min_length=1, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("name is required")
+        return v
+
+    @model_validator(mode="after")
+    def check_prices_and_variants(self):
+        if self.floor_price is not None and self.floor_price > self.sell_price:
+            raise ValueError("floor_price cannot be higher than sell_price")
+        keys = [((v.size or "").lower(), (v.color or "").lower()) for v in self.variants]
+        if len(keys) != len(set(keys)):
+            raise ValueError("each variant needs a different size/color combination")
+        return self
+
+
+@app.post("/products", status_code=201)
+async def create_product_endpoint(body: ProductCreate):
+    """Dashboard 'Add product'. The catalog the AI sees and every price/stock rule still come from
+    these database rows, so a product only exists for ordering once it is created here."""
+    try:
+        product = create_product(
+            body.vendor_id, body.name, body.cost_price, body.sell_price,
+            body.floor_price if body.floor_price is not None else body.sell_price,
+            [v.model_dump() for v in body.variants],
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    except DuplicateProductError:
+        raise HTTPException(status_code=409, detail="You already have a product with that name")
+    except Exception as e:
+        print("create_product failed:", e)
+        raise HTTPException(status_code=500, detail="Could not create the product")
+    return {"status": "created", "product": product}
 
 
 @app.post("/orders/{order_id}/confirm")

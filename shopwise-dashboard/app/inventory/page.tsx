@@ -68,5 +68,5 @@ export default async function InventoryPage() {
   }
 
   const inventory = await getInventory(vendor.id);
-  return <InventoryBoard inventory={inventory} />;
+  return <InventoryBoard inventory={inventory} vendorId={vendor.id} />;
 }
