@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { AnalyticsBoard } from '@/components/AnalyticsBoard';
 
@@ -7,7 +7,7 @@ async function getRangeOrders(vendorId: string, days: number) {
   start.setDate(start.getDate() - (days - 1));
   start.setHours(0, 0, 0, 0);
 
-  const { data: orders } = await supabase
+  const { data: orders } = await (await getSupabase())
     .from('orders')
     .select('id, status, total_amount, created_at, customer_id, customers(display_name, wa_id)')
     .eq('vendor_id', vendorId)
@@ -23,7 +23,7 @@ async function getRangeOrders(vendorId: string, days: number) {
   // lives on the `payments` table (same fix as the Orders page's Payment
   // column), so join it here rather than trusting orders.status alone.
   const orderIds = allOrders.map((o: any) => o.id);
-  const { data: payments } = await supabase
+  const { data: payments } = await (await getSupabase())
     .from('payments')
     .select('order_id, status')
     .in('order_id', orderIds)
@@ -77,7 +77,7 @@ async function getAnalytics(vendorId: string, days: number) {
     const customerName = (order as any).customers?.display_name || (order as any).customers?.wa_id || 'Customer';
     customerMap.set(customerName, (customerMap.get(customerName) || 0) + Number((order as any).total_amount || 0));
 
-    const { data: items } = await supabase
+    const { data: items } = await (await getSupabase())
       .from('order_items')
       .select('quantity, unit_price, product_variants(product_id)')
       .eq('order_id', (order as any).id);
@@ -85,7 +85,7 @@ async function getAnalytics(vendorId: string, days: number) {
     for (const item of dataOrEmpty<any[]>(items)) {
       const productId = (item as any).product_variants?.product_id;
       if (!productId) continue;
-      const { data: product } = await supabase.from('products').select('name, cost_price').eq('id', productId).single();
+      const { data: product } = await (await getSupabase()).from('products').select('name, cost_price').eq('id', productId).single();
       if (!product) continue;
       const total = Number((item as any).quantity || 0) * Number((item as any).unit_price || 0);
       productMap.set((product as any).name, (productMap.get((product as any).name) || 0) + total);

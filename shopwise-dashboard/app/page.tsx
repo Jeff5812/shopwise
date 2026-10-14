@@ -1,9 +1,9 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { MotionHomeContent } from '@/components/MotionHomeContent';
 
 async function getOrdersInRange(vendorId: string, start: Date, end: Date) {
-  const { data } = await supabase
+  const { data } = await (await getSupabase())
     .from('orders')
     .select('*')
     .eq('vendor_id', vendorId)
@@ -20,7 +20,7 @@ async function getPaidOrderIds(orderIds: string[]): Promise<Set<string>> {
   // directly), so status='confirmed' is not a safe stand-in for "paid" on its
   // own; the payments join is the source of truth either way.
   if (orderIds.length === 0) return new Set();
-  const { data: payments } = await supabase
+  const { data: payments } = await (await getSupabase())
     .from('payments')
     .select('order_id')
     .in('order_id', orderIds)
@@ -38,7 +38,7 @@ async function getTodayOrders(vendorId: string) {
 
 async function getProfitForOrders(orderIds: string[]) {
   if (orderIds.length === 0) return 0;
-  const { data: items } = await supabase
+  const { data: items } = await (await getSupabase())
     .from('order_items')
     .select('quantity, unit_price, product_variants(product_id)')
     .in('order_id', orderIds);
@@ -47,16 +47,16 @@ async function getProfitForOrders(orderIds: string[]) {
   for (const item of items as any[]) {
     const productId = item.product_variants?.product_id;
     if (!productId) continue;
-    const { data: product } = await supabase.from('products').select('cost_price').eq('id', productId).single();
+    const { data: product } = await (await getSupabase()).from('products').select('cost_price').eq('id', productId).single();
     if (product) profit += item.quantity * (item.unit_price - product.cost_price);
   }
   return profit;
 }
 
 async function getLowStockCount(vendorId: string) {
-  const { data: products } = await supabase.from('products').select('id').eq('vendor_id', vendorId);
+  const { data: products } = await (await getSupabase()).from('products').select('id').eq('vendor_id', vendorId);
   if (!products?.length) return 0;
-  const { data: variants } = await supabase
+  const { data: variants } = await (await getSupabase())
     .from('product_variants')
     .select('stock_quantity, restock_threshold')
     .in('product_id', products.map((p) => p.id));
@@ -68,7 +68,7 @@ async function getPendingPaymentCount(vendorId: string) {
   // inverse of what confirmed now means since the payment state-machine fix
   // (confirmed only happens after real payment, via the Paystack webhook).
   // The actual "waiting on payment" status is pending_payment.
-  const { count } = await supabase
+  const { count } = await (await getSupabase())
     .from('orders')
     .select('*', { count: 'exact', head: true })
     .eq('vendor_id', vendorId)
@@ -81,7 +81,7 @@ async function getWeeklyProfitTrend(vendorId: string) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   sevenDaysAgo.setHours(0, 0, 0, 0);
 
-  const { data: orders } = await supabase
+  const { data: orders } = await (await getSupabase())
     .from('orders')
     .select('id, created_at')
     .eq('vendor_id', vendorId)
@@ -98,7 +98,7 @@ async function getWeeklyProfitTrend(vendorId: string) {
     const paidIds = await getPaidOrderIds(orders.map((o) => o.id));
     for (const order of orders) {
       if (!paidIds.has(order.id)) continue;
-      const { data: items } = await supabase
+      const { data: items } = await (await getSupabase())
         .from('order_items')
         .select('quantity, unit_price, product_variants(product_id)')
         .eq('order_id', order.id);
@@ -110,7 +110,7 @@ async function getWeeklyProfitTrend(vendorId: string) {
       for (const item of items as any[]) {
         const productId = item.product_variants?.product_id;
         if (!productId) continue;
-        const { data: product } = await supabase.from('products').select('cost_price').eq('id', productId).single();
+        const { data: product } = await (await getSupabase()).from('products').select('cost_price').eq('id', productId).single();
         if (product) days[dayIndex].profit += item.quantity * (item.unit_price - product.cost_price);
       }
     }
@@ -119,7 +119,7 @@ async function getWeeklyProfitTrend(vendorId: string) {
 }
 
 async function getLiveFeed(vendorId: string) {
-  const { data } = await supabase
+  const { data } = await (await getSupabase())
     .from('messages')
     .select('*, customers(display_name, wa_id)')
     .eq('vendor_id', vendorId)

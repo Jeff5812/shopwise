@@ -83,6 +83,11 @@ export function Sidebar({
           <SettingsIcon size={15} strokeWidth={1.75} />
           Settings
         </Link>
+        <form action="/logout" method="post">
+          <button type="submit" className="w-full rounded-none border-l-2 border-transparent px-2.5 py-1.5 text-left text-[13px] text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900">
+            Sign out
+          </button>
+        </form>
         <div className="mt-1 flex items-center gap-2 px-2.5 py-2">
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-200 text-[10px] font-medium text-stone-700">
             {storeName.charAt(0).toUpperCase()}

@@ -1,5 +1,5 @@
 // Client for shopwise-backend's dashboard-facing write API.
-// Reads still go straight to Supabase (see lib/supabase.ts) — this is only for actions
+// Reads go to Supabase as the logged-in user (see lib/supabase.ts) — this is only for actions
 // that change data, so the order/stock rules in shopwise-backend/db.py stay the single
 // source of truth instead of being reimplemented here.
 

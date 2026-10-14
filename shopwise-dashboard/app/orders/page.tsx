@@ -1,9 +1,9 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { OrdersBoard } from '@/components/OrdersBoard';
 
 async function getOrdersWithDetails(vendorId: string) {
-  const { data: orders } = await supabase
+  const { data: orders } = await (await getSupabase())
     .from('orders')
     .select('*, customers(display_name, wa_id)')
     .eq('vendor_id', vendorId)
@@ -20,7 +20,7 @@ async function getOrdersWithDetails(vendorId: string) {
   // order (an order can have more than one payment attempt if a link failed
   // and was regenerated).
   const orderIds = orders.map((o: any) => o.id);
-  const { data: payments } = await supabase
+  const { data: payments } = await (await getSupabase())
     .from('payments')
     .select('order_id, status, created_at')
     .in('order_id', orderIds)
@@ -35,7 +35,7 @@ async function getOrdersWithDetails(vendorId: string) {
 
   const withItems = await Promise.all(
     orders.map(async (order: any) => {
-      const { data: items } = await supabase
+      const { data: items } = await (await getSupabase())
         .from('order_items')
         .select('quantity, unit_price, product_variants(product_id, size, color)')
         .eq('order_id', order.id);
@@ -45,7 +45,7 @@ async function getOrdersWithDetails(vendorId: string) {
           const productId = item.product_variants?.product_id;
           let productName = 'Product';
           if (productId) {
-            const { data: product } = await supabase.from('products').select('name').eq('id', productId).single();
+            const { data: product } = await (await getSupabase()).from('products').select('name').eq('id', productId).single();
             productName = product?.name ?? 'Product';
           }
           const variant = [item.product_variants?.size, item.product_variants?.color].filter(Boolean).join(' ') || 'Standard';
