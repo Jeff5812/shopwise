@@ -222,6 +222,40 @@ def adjust_stock(variant_id: str, new_quantity: int):
     return supabase.table("product_variants").update({"stock_quantity": new_quantity}).eq("id", variant_id).execute().data[0]
 
 
+class DuplicateProductError(Exception):
+    """The vendor already has a product with this name."""
+
+
+def create_product(vendor_id: str, name: str, cost_price: float, sell_price: float,
+                   floor_price: float, variants: list):
+    """Creates a product and its variants for a vendor (dashboard onboarding, no SQL needed).
+
+    Two inserts, so if the variants insert fails the product just created is deleted again: a
+    product without variants can never be ordered and a half-made catalog row must not linger.
+    Only ever deletes the row this call created. Product names are unique per vendor
+    (case-insensitive) because the understanding layer identifies products by name."""
+    if not supabase.table("vendors").select("id").eq("id", vendor_id).limit(1).execute().data:
+        raise LookupError("vendor not found")
+    existing = supabase.table("products").select("name").eq("vendor_id", vendor_id).execute().data
+    if any((row["name"] or "").strip().lower() == name.strip().lower() for row in existing):
+        raise DuplicateProductError(name)
+
+    product = supabase.table("products").insert({
+        "vendor_id": vendor_id, "name": name,
+        "cost_price": cost_price, "sell_price": sell_price, "floor_price": floor_price,
+    }).execute().data[0]
+    try:
+        rows = supabase.table("product_variants").insert([
+            {"product_id": product["id"], "size": v["size"], "color": v["color"],
+             "stock_quantity": v["stock_quantity"]}
+            for v in variants
+        ]).execute().data
+    except Exception:
+        supabase.table("products").delete().eq("id", product["id"]).execute()
+        raise
+    return {**product, "variants": rows}
+
+
 def log_outbound_message(vendor_id: str, customer_id: str, raw_text: str):
     """Logs the bot's own reply so future conversation-history lookups include both sides of
     the exchange, not just the customer's messages. wa_message_id is null for our own sends."""

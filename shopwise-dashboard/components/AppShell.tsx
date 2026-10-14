@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { PageTransition } from '@/components/PageTransition';
 import { AskShopwiseAI } from '@/components/AskShopwiseAI';
@@ -9,6 +9,8 @@ import { AskShopwiseAI } from '@/components/AskShopwiseAI';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+  if (pathname === '/login') return <>{children}</>; // no sidebar or search before sign-in
 
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900 antialiased">

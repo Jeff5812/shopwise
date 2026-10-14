@@ -24,8 +24,12 @@ async def create_payment_for_order(order_id: str, customer_email: str) -> str:
     return result["authorization_url"]
 
 
-def process_webhook_charge_success(event_data: dict) -> None:
-    """Idempotent. Called only after signature verification."""
+def process_webhook_charge_success(event_data: dict):
+    """Idempotent. Called only after signature verification.
+
+    Returns the order_id ONLY when this call is the one that moved the payment to paid and
+    confirmed the order. Retries, unknown references and amount mismatches return None, so the
+    caller notifies about a payment exactly once."""
     reference = event_data["reference"]
     amount_kobo = event_data["amount"]
     currency = event_data["currency"]
@@ -52,3 +56,4 @@ def process_webhook_charge_success(event_data: dict) -> None:
 
     mark_payment_paid(payment["id"])
     confirm_order(payment["order_id"])  # existing confirm_order — order status only, no payment logic inside it
+    return payment["order_id"]

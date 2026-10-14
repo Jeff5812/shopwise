@@ -1,9 +1,9 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { ReplenishmentBoard } from '@/components/ReplenishmentBoard';
 
 async function getReplenishment(vendorId: string) {
-  const { data: products } = await supabase
+  const { data: products } = await (await getSupabase())
     .from('products')
     .select('*')
     .eq('vendor_id', vendorId)
@@ -13,7 +13,7 @@ async function getReplenishment(vendorId: string) {
 
   return await Promise.all(
     products.map(async (product: any) => {
-      const { data: variants } = await supabase
+      const { data: variants } = await (await getSupabase())
         .from('product_variants')
         .select('*')
         .eq('product_id', product.id);

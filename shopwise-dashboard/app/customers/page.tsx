@@ -1,9 +1,9 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { CustomersBoard } from '@/components/CustomersBoard';
 
 async function getCustomers(vendorId: string) {
-  const { data: orders } = await supabase
+  const { data: orders } = await (await getSupabase())
     .from('orders')
     .select('id, total_amount, created_at, customer_id, customers(id, display_name, wa_id)')
     .eq('vendor_id', vendorId)
@@ -36,7 +36,7 @@ async function getCustomers(vendorId: string) {
 
   const customerRows = await Promise.all(
     [...byCustomer.values()].map(async (customer: any) => {
-      const { data: items } = await supabase
+      const { data: items } = await (await getSupabase())
         .from('order_items')
         .select('quantity, product_variants(product_id), order_id')
         .in('order_id', customer.orders.map((order: any) => order.id));
@@ -49,7 +49,7 @@ async function getCustomers(vendorId: string) {
       for (const item of items as any[]) {
         const productId = item.product_variants?.product_id;
         if (!productId) continue;
-        const { data: product } = await supabase.from('products').select('name').eq('id', productId).single();
+        const { data: product } = await (await getSupabase()).from('products').select('name').eq('id', productId).single();
         const name = product?.name || 'Product';
         productCounts.set(name, (productCounts.get(name) || 0) + Number(item.quantity || 0));
       }

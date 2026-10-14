@@ -3,7 +3,8 @@ import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from typing import Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
 
 from db import (
@@ -25,6 +26,8 @@ from db import (
     get_review_queue,
     resolve_review_queue,
     adjust_stock,
+    create_product,
+    DuplicateProductError,
     set_customer_email,
     set_order_awaiting_email,
     get_order_awaiting_email,
@@ -35,6 +38,7 @@ from actions import terminal_type
 from action_executors import execute
 from paystack_service import PaystackService
 from payment_service import create_payment_for_order, process_webhook_charge_success
+from payment_notifications import build_customer_receipt, build_seller_alert
 from email_capture import extract_email, looks_like_cancel, EMAIL_REQUEST, EMAIL_REQUEST_RETRY
 
 load_dotenv()
@@ -379,9 +383,30 @@ async def paystack_webhook(request: Request):
 
     payload = await request.json()
     if payload.get("event") == "charge.success":
-        process_webhook_charge_success(payload["data"])
+        paid_order_id = process_webhook_charge_success(payload["data"])
+        if paid_order_id:
+            # Only the call that actually flipped the payment to paid gets here, so Paystack's
+            # retries can never produce a second notification.
+            await notify_payment_received(paid_order_id)
 
     return {"status": "ok"}
+
+
+async def notify_payment_received(order_id: str):
+    """Tells the customer their payment landed and, if SELLER_NOTIFY_WA_ID is set, alerts the seller.
+    Everything is built from database rows; a failure here is logged and never fails the webhook
+    (the payment is already recorded, and Paystack would only retry into a no-op)."""
+    try:
+        order = get_order(order_id)
+        customer = get_customer(order["customer_id"])
+        if customer and customer.get("wa_id"):
+            await reply_and_log(order["vendor_id"], customer["id"], customer["wa_id"],
+                                build_customer_receipt(order))
+        seller_wa_id = os.getenv("SELLER_NOTIFY_WA_ID")
+        if seller_wa_id:
+            await send_whatsapp_message(seller_wa_id, build_seller_alert(order, customer))
+    except Exception as e:
+        print("notify_payment_received failed:", e)
 
 
 # --- Dashboard-facing API ---
@@ -390,6 +415,64 @@ async def paystack_webhook(request: Request):
 
 class StockUpdate(BaseModel):
     stock_quantity: int
+
+
+class VariantIn(BaseModel):
+    size: Optional[str] = None
+    color: Optional[str] = None
+    stock_quantity: int = Field(ge=0)
+
+    @field_validator("size", "color")
+    @classmethod
+    def blank_to_none(cls, v):
+        v = (v or "").strip()
+        return v or None
+
+
+class ProductCreate(BaseModel):
+    vendor_id: str
+    name: str = Field(min_length=1, max_length=120)
+    cost_price: float = Field(ge=0)
+    sell_price: float = Field(gt=0)
+    floor_price: Optional[float] = Field(default=None, ge=0)  # defaults to sell_price: no discounting
+    variants: list[VariantIn] = Field(min_length=1, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("name is required")
+        return v
+
+    @model_validator(mode="after")
+    def check_prices_and_variants(self):
+        if self.floor_price is not None and self.floor_price > self.sell_price:
+            raise ValueError("floor_price cannot be higher than sell_price")
+        keys = [((v.size or "").lower(), (v.color or "").lower()) for v in self.variants]
+        if len(keys) != len(set(keys)):
+            raise ValueError("each variant needs a different size/color combination")
+        return self
+
+
+@app.post("/products", status_code=201)
+async def create_product_endpoint(body: ProductCreate):
+    """Dashboard 'Add product'. The catalog the AI sees and every price/stock rule still come from
+    these database rows, so a product only exists for ordering once it is created here."""
+    try:
+        product = create_product(
+            body.vendor_id, body.name, body.cost_price, body.sell_price,
+            body.floor_price if body.floor_price is not None else body.sell_price,
+            [v.model_dump() for v in body.variants],
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    except DuplicateProductError:
+        raise HTTPException(status_code=409, detail="You already have a product with that name")
+    except Exception as e:
+        print("create_product failed:", e)
+        raise HTTPException(status_code=500, detail="Could not create the product")
+    return {"status": "created", "product": product}
 
 
 @app.post("/orders/{order_id}/confirm")

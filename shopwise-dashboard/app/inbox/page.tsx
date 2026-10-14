@@ -1,9 +1,9 @@
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { InboxBoard } from '@/components/InboxBoard';
 
 async function getMessages(vendorId: string) {
-  const { data } = await supabase
+  const { data } = await (await getSupabase())
     .from('messages')
     .select('*, customers(display_name, wa_id)')
     .eq('vendor_id', vendorId)
@@ -13,7 +13,7 @@ async function getMessages(vendorId: string) {
   if (!data) return [];
 
   const messageIds = data.map((m: any) => m.id);
-  const { data: reviewItems } = await supabase
+  const { data: reviewItems } = await (await getSupabase())
     .from('review_queue')
     .select('id, message_id, reason, resolved')
     .in('message_id', messageIds)

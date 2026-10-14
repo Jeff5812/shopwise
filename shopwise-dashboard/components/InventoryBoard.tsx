@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/Button';
 import { updateStock, ApiError } from '@/lib/api';
+import { AddProductForm } from '@/components/AddProductForm';
 
 function formatMoney(value: number | null | undefined) {
   const numeric = Number(value ?? 0);
@@ -19,7 +20,7 @@ function getStockStatus(stock: number, typicalStock: number) {
   return 'healthy';
 }
 
-export function InventoryBoard({ inventory }: { inventory: any[] }) {
+export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vendorId: string }) {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
@@ -27,6 +28,7 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [pendingVariantId, setPendingVariantId] = useState<string | null>(null);
   const [stockError, setStockError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -94,6 +96,7 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
+      {adding && <AddProductForm vendorId={vendorId} onClose={() => setAdding(false)} />}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Inventory</h1>
         <div className="flex w-full max-w-lg items-center gap-2 sm:w-auto">
@@ -109,6 +112,7 @@ export function InventoryBoard({ inventory }: { inventory: any[] }) {
               className="w-full bg-transparent text-stone-700 placeholder:text-stone-400 focus:outline-none"
             />
           </label>
+          <Button className="h-10 px-3 text-sm" onClick={() => setAdding(true)}>Add product</Button>
           <Button variant="secondary" className="h-10 px-3 text-sm">Category</Button>
           <Button variant="secondary" className="h-10 px-3 text-sm">Status</Button>
         </div>

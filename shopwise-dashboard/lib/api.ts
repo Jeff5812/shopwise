@@ -1,5 +1,5 @@
 // Client for shopwise-backend's dashboard-facing write API.
-// Reads still go straight to Supabase (see lib/supabase.ts) — this is only for actions
+// Reads go to Supabase as the logged-in user (see lib/supabase.ts) — this is only for actions
 // that change data, so the order/stock rules in shopwise-backend/db.py stay the single
 // source of truth instead of being reimplemented here.
 
@@ -50,4 +50,17 @@ export function updateStock(variantId: string, stockQuantity: number) {
 
 export function resolveReviewItem(itemId: string) {
   return request(`/review-queue/${itemId}/resolve`, { method: 'POST' });
+}
+
+export type NewProduct = {
+  vendor_id: string;
+  name: string;
+  cost_price: number;
+  sell_price: number;
+  floor_price?: number;
+  variants: { size?: string; color?: string; stock_quantity: number }[];
+};
+
+export function createProduct(product: NewProduct) {
+  return request('/products', { method: 'POST', body: JSON.stringify(product) });
 }
