@@ -1,43 +1,50 @@
 import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { ReplenishmentBoard } from '@/components/ReplenishmentBoard';
+import { buildReplenishment, summarise, WINDOW_DAYS, WEEKS_SHOWN, type PaidSale, type VariantInput } from '@/lib/replenishment';
 
+// Two queries: the catalog with its variants, and paid sales for the longest window we draw
+// (the weekly demand bars). Row level security already limits both to this login's vendor.
 async function getReplenishment(vendorId: string) {
-  const { data: products } = await (await getSupabase())
-    .from('products')
-    .select('*')
-    .eq('vendor_id', vendorId)
-    .order('name', { ascending: true });
+  const supabase = await getSupabase();
+  const since = new Date(Date.now() - Math.max(WINDOW_DAYS, WEEKS_SHOWN * 7) * 86_400_000).toISOString();
 
-  if (!products) return [];
+  const [{ data: products }, { data: paid }] = await Promise.all([
+    supabase
+      .from('products')
+      .select('id, name, cost_price, product_variants(id, size, color, stock_quantity, restock_threshold)')
+      .eq('vendor_id', vendorId),
+    supabase
+      .from('payments')
+      .select('paid_at, orders!inner(vendor_id, order_items(product_variant_id, quantity))')
+      .eq('status', 'paid')
+      .eq('orders.vendor_id', vendorId)
+      .gte('paid_at', since),
+  ]);
 
-  return await Promise.all(
-    products.map(async (product: any) => {
-      const { data: variants } = await (await getSupabase())
-        .from('product_variants')
-        .select('*')
-        .eq('product_id', product.id);
-
-      const stockQuantity = variants?.reduce((sum: number, variant: any) => sum + Number(variant.stock_quantity || 0), 0) ?? 0;
-      const typicalStock = variants?.reduce((sum: number, variant: any) => sum + Number(variant.restock_threshold || 0), 0) || 20;
-      const avgSales = Number(product.avg_sales_30d ?? product.average_sales_30d ?? 0);
-      const recommendedQty = stockQuantity <= 0 ? Math.max(Math.ceil(typicalStock * 0.8), 10) : Math.max(Math.ceil((typicalStock - stockQuantity) * 1.2), 0);
-      const daysLeft = avgSales > 0 ? Math.max(Math.ceil(stockQuantity / avgSales), 0) : null;
-
-      return {
-        id: product.id,
-        name: product.name,
-        sku: product.sku || product.id?.slice(0, 8) || '—',
-        stock_quantity: stockQuantity,
-        days_left: daysLeft,
-        recommended_qty: recommendedQty,
-        reasoning:
-          avgSales > 0
-            ? 'Based on average sales over the last 30 days.'
-            : 'No recent sales history is available yet for a calculated reorder recommendation.',
-      };
-    })
+  const variants: VariantInput[] = (products ?? []).flatMap((product: any) =>
+    (product.product_variants ?? []).map((v: any) => ({
+      variant_id: v.id,
+      product_name: product.name,
+      variant_label: [v.size, v.color].filter(Boolean).join(' / '),
+      sku: String(v.id).slice(0, 8),
+      stock: Number(v.stock_quantity ?? 0),
+      threshold: Number(v.restock_threshold ?? 0),
+      cost_price: Number(product.cost_price ?? 0),
+    })),
   );
+
+  const sales: PaidSale[] = (paid ?? []).flatMap((payment: any) => {
+    const order = Array.isArray(payment.orders) ? payment.orders[0] : payment.orders;
+    return (order?.order_items ?? []).map((item: any) => ({
+      paid_at: payment.paid_at,
+      variant_id: item.product_variant_id,
+      quantity: Number(item.quantity ?? 0),
+    }));
+  });
+
+  const items = buildReplenishment(variants, sales);
+  return { items, summary: summarise(items) };
 }
 
 export default async function ReplenishmentPage() {
@@ -50,6 +57,6 @@ export default async function ReplenishmentPage() {
     );
   }
 
-  const items = await getReplenishment(vendor.id);
-  return <ReplenishmentBoard items={items} />;
+  const { items, summary } = await getReplenishment(vendor.id);
+  return <ReplenishmentBoard items={items} summary={summary} />;
 }
