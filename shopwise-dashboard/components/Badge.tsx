@@ -1,16 +1,16 @@
 const STATUS_STYLES: Record<string, string> = {
-  new: 'bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-200',
-  confirmed: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
-  processing: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200',
-  shipped: 'bg-blue-100 text-blue-800 ring-1 ring-inset ring-blue-200',
-  delivered: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
-  cancelled: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200',
-  healthy: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
-  low: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200',
-  critical: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200',
-  out_of_stock: 'bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200',
-  pending: 'bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200',
-  paid: 'bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+  new: 'bg-stone-100 text-stone-700 ring-1 ring-inset ring-stone-200',
+  confirmed: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-100',
+  processing: 'bg-[#F5EDD9] text-[#76500D] ring-1 ring-inset ring-[#E0C988]',
+  shipped: 'bg-stone-100 text-stone-700 ring-1 ring-inset ring-stone-200',
+  delivered: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-100',
+  cancelled: 'bg-[#F6E8E5] text-[#842C23] ring-1 ring-inset ring-[#E5C2BC]',
+  healthy: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-100',
+  low: 'bg-[#F5EDD9] text-[#76500D] ring-1 ring-inset ring-[#E0C988]',
+  critical: 'bg-[#F6E8E5] text-[#842C23] ring-1 ring-inset ring-[#E5C2BC]',
+  out_of_stock: 'bg-[#F6E8E5] text-[#842C23] ring-1 ring-inset ring-[#E5C2BC]',
+  pending: 'bg-[#F5EDD9] text-[#76500D] ring-1 ring-inset ring-[#E0C988]',
+  paid: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-100',
 };
 
 export function Badge({ status }: { status: string }) {

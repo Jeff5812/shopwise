@@ -2,6 +2,10 @@ import { getSupabase } from '@/lib/supabase';
 import { getVendor } from '@/lib/vendor';
 import { MotionHomeContent } from '@/components/MotionHomeContent';
 
+function formatMoney(value: number) {
+  return `₦${value.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`;
+}
+
 async function getOrdersInRange(vendorId: string, start: Date, end: Date) {
   const { data } = await (await getSupabase())
     .from('orders')
@@ -174,7 +178,7 @@ export default async function HomePage() {
   const metrics = [
     {
       label: "Today's sales",
-      value: `₦${todaySales.toFixed(0)}`,
+      value: formatMoney(todaySales),
       subline: null,
       delta: salesDelta,
     },
@@ -199,16 +203,16 @@ export default async function HomePage() {
   ];
 
   const needsAttention = [
-    ...(lowStockCount > 0 ? [{ label: 'Low stock products need replenishment', href: '/inventory', color: 'bg-rose-500' }] : []),
-    ...(pendingOrders > 0 ? [{ label: 'Orders still awaiting confirmation', href: '/orders', color: 'bg-amber-500' }] : []),
-    ...(pendingPaymentCount > 0 ? [{ label: 'Payments are waiting on review', href: '/orders', color: 'bg-emerald-600' }] : []),
+    ...(lowStockCount > 0 ? [{ label: 'Low stock products need replenishment', href: '/inventory', color: 'bg-danger' }] : []),
+    ...(pendingOrders > 0 ? [{ label: 'Orders still awaiting confirmation', href: '/orders', color: 'bg-warn' }] : []),
+    ...(pendingPaymentCount > 0 ? [{ label: 'Payments are waiting on review', href: '/orders', color: 'bg-warn' }] : []),
   ];
 
   const aiObservations =
     lowStockCount > 0 || todayProfit > 0 || todayOrders.length > 0
       ? [
           ...(lowStockCount > 0 ? [`${lowStockCount} items are trending below their restock threshold.`] : []),
-          ...(todayOrders.length > 0 ? [`${todayOrders.length} orders came in today, with ${todayProfit.toFixed(0)} in net profit.`] : []),
+          ...(todayOrders.length > 0 ? [`${todayOrders.length} orders came in today, with ${formatMoney(todayProfit)} in net profit.`] : []),
           ...(pendingPaymentCount > 0 ? [`${pendingPaymentCount} payments are still pending review.`] : []),
         ]
       : [];

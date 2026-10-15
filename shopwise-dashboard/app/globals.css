@@ -1,55 +1,164 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+/*
+  Shopwise palette: Spotify green + beige #DDD0C8 + dark grey #323232 + cream.
+  The existing stone-* and emerald-* utilities are remapped here, so every page
+  that already uses them is re-themed without touching its markup.
+  Rules: green is a FILL (buttons, active marker, paid dot, main chart series).
+  Text on green is always dark. Green text is only used on dark panels.
+*/
 @theme {
-  --font-serif: var(--font-lora), Georgia, 'Times New Roman', serif;
-  --color-stone-50: #FAFAF9;
-  --color-stone-900: #1C1917;
+  --font-serif: var(--font-source-serif), Georgia, 'Times New Roman', serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 
-  /* Emerald brand scale — primary accent, restored as a real color, not a wash */
-  --color-emerald-50: #ECFDF5;
-  --color-emerald-100: #D1FAE5;
-  --color-emerald-500: #10B981;
-  --color-emerald-600: #059669;
-  --color-emerald-700: #047857;
-  --color-emerald-800: #065F46;
+  /* Warm neutrals (cream, sand, ink) */
+  --color-stone-50: #F7F3EE;
+  --color-stone-100: #EFE8E1;
+  --color-stone-200: #DDD0C8;
+  --color-stone-300: #CBBBB0;
+  --color-stone-400: #7C726B;
+  --color-stone-500: #6B635D;
+  --color-stone-600: #55504B;
+  --color-stone-700: #3F3C39;
+  --color-stone-800: #3A3836;
+  --color-stone-900: #323232;
+  --color-white: #FCFAF7;
+
+  /* Spotify green scale. 800 and 900 are text-safe on cream. */
+  --color-emerald-50: #E8F7EE;
+  --color-emerald-100: #D3F0DE;
+  --color-emerald-200: #A9E3BF;
+  --color-emerald-500: #1ED760;
+  --color-emerald-600: #1DB954;
+  --color-emerald-700: #169C46;
+  --color-emerald-800: #0F5C2B;
+  --color-emerald-900: #0B4220;
+
+  /* Named tokens for new work */
+  --color-cream: #F7F3EE;
+  --color-paper: #FCFAF7;
+  --color-sand: #DDD0C8;
+  --color-sand-soft: #EAE1DA;
+  --color-ink: #323232;
+  --color-ink-soft: #6B635D;
+  --color-brand: #1DB954;
+  --color-brand-hover: #1ED760;
+  --color-on-brand: #323232;
+  --color-warn: #B7791F;
+  --color-danger: #B3402F;
+
+  /* Radius by hierarchy: controls 6-8, cards 16, panels 20 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+
+  /* Two shadows only, tinted with ink */
+  --shadow-card: 0 1px 2px rgba(50, 50, 50, 0.06), 0 10px 28px -14px rgba(50, 50, 50, 0.22);
+  --shadow-lift: 0 2px 4px rgba(50, 50, 50, 0.08), 0 24px 48px -18px rgba(50, 50, 50, 0.32);
 }
 
 html, body {
-  background-color: #FAFAF9;
-  color: #1C1917;
+  background-color: #F7F3EE;
+  color: #323232;
 }
 
 .font-data {
-  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  font-family: ui-monospace, SFMono-Regular, monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/* Depth system — cards, panels, popovers. Use these classes instead of a bare border. */
 .surface-card {
-  background: #FFFFFF;
-  border: 1px solid #E7E5E4; /* stone-200 */
-  border-radius: 0.75rem;
-  box-shadow:
-    0 1px 2px rgba(28, 25, 23, 0.04),
-    0 8px 24px -12px rgba(28, 25, 23, 0.12);
+  background: #FCFAF7;
+  border: 1px solid #DDD0C8;
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
 }
 
 .surface-card-hover {
-  transition: box-shadow 150ms ease, transform 150ms ease;
+  transition: background-color 150ms ease;
 }
 .surface-card-hover:hover {
-  box-shadow:
-    0 2px 4px rgba(28, 25, 23, 0.05),
-    0 16px 32px -14px rgba(28, 25, 23, 0.18);
-  transform: translateY(-1px);
+  background: #EFE8E1;
 }
 
-/* Elevated / glossy primary surface — sidebar, primary CTAs, active nav */
+/* Unlayered on purpose: wins over utilities such as text-white, so old
+   "surface-emerald text-white" markup stays readable (dark text on green). */
 .surface-emerald {
-  background: linear-gradient(180deg, #059669 0%, #047857 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 1px 2px rgba(4, 120, 87, 0.3),
-    0 8px 20px -8px rgba(4, 120, 87, 0.45);
+  background: #1DB954;
+  color: #323232;
+}
+
+:focus-visible {
+  outline: 2px solid #323232;
+  outline-offset: 2px;
+}
+
+.on-dark :focus-visible {
+  outline-color: #F7F3EE;
+}
+
+/* Motion answers an action. Everything is behind a reduced-motion guard. */
+@media (prefers-reduced-motion: no-preference) {
+  .btn-press {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .btn-press:active {
+    transform: scale(0.95);
+    transition: transform 0.08s ease-out;
+  }
+
+  /* Toast overshoot (Kinetics) */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    z-index: 60;
+    transform: translate(-50%, 140%) scale(0.9);
+    opacity: 0;
+    transition: transform 0.55s cubic-bezier(0.18, 1.25, 0.4, 1), opacity 0.3s;
+  }
+  .toast.show {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+
+  /* Number and stepper bump (Kinetics) */
+  .num-bump {
+    display: inline-block;
+    font-variant-numeric: tabular-nums;
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .num-bump.bump {
+    transform: scale(1.18);
+  }
+
+  /* Skeleton shimmer (Kinetics) */
+  .skel-bar {
+    background: linear-gradient(90deg, #EAE1DA 25%, #F3ECE6 50%, #EAE1DA 75%);
+    background-size: 200% 100%;
+    animation: shimmer-sweep 1.4s ease-in-out infinite;
+  }
+  @keyframes shimmer-sweep {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    z-index: 60;
+    transform: translate(-50%, 0);
+    opacity: 0;
+  }
+  .toast.show {
+    opacity: 1;
+  }
+  .skel-bar {
+    background: #EAE1DA;
+  }
 }

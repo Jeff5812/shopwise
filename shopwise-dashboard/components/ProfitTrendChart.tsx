@@ -3,6 +3,10 @@ type ProfitPoint = {
   profit: number;
 };
 
+function formatMoney(value: number) {
+  return `₦${value.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`;
+}
+
 export function ProfitTrendChart({ data }: { data: ProfitPoint[] }) {
   if (!data.length) {
     return (
@@ -23,9 +27,9 @@ export function ProfitTrendChart({ data }: { data: ProfitPoint[] }) {
           <div key={`${point.label}-${point.profit}`} className="flex flex-1 flex-col items-center gap-2">
             <div className="flex h-28 w-full items-end justify-center">
               <div
-                className="w-full max-w-10 rounded-none bg-stone-800"
+                className="w-full max-w-10 rounded-none bg-[#1F5F46]"
                 style={{ height: `${height}%` }}
-                title={`${point.label}: ₦${point.profit}`}
+                title={`${point.label}: ${formatMoney(point.profit)}`}
               />
             </div>
             <span className="text-[10px] uppercase tracking-[0.12em] text-stone-400">{point.label}</span>

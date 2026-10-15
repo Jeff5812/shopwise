@@ -39,10 +39,21 @@ function formatDate(value: string | null | undefined) {
   });
 }
 
+function getCustomerName(order: {
+  customers?: { display_name?: string | null; wa_id?: string | null } | null;
+}) {
+  return order.customers?.display_name || order.customers?.wa_id || 'Customer';
+}
+
 export function OrdersBoard({ orders }: { orders: any[] }) {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [sort, setSort] = useState<{
+    key: 'customer' | 'amount' | 'created';
+    direction: 'asc' | 'desc';
+  }>({ key: 'created', direction: 'desc' });
   const [page, setPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [actionPending, setActionPending] = useState(false);
@@ -78,6 +89,7 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
 
   const filteredOrders = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const now = new Date();
     return orders.filter((order) => {
       const matchesSearch =
         !query ||
@@ -85,13 +97,39 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
         (order.customers?.display_name || order.customers?.wa_id || '').toLowerCase().includes(query) ||
         (order.itemsSummary || '').toLowerCase().includes(query);
       const matchesStatus = statusFilter === 'all' || normalizeStatus(order.status) === statusFilter;
-      return matchesSearch && matchesStatus;
+      const createdAt = order.created_at ? new Date(order.created_at) : null;
+      const matchesDate =
+        dateFilter === 'all' ||
+        (createdAt !== null &&
+          !Number.isNaN(createdAt.getTime()) &&
+          (dateFilter === 'today'
+            ? createdAt.toDateString() === now.toDateString()
+            : createdAt.getTime() >=
+              now.getTime() - (dateFilter === '7d' ? 7 : 30) * 86400000));
+      return matchesSearch && matchesStatus && matchesDate;
     });
-  }, [orders, search, statusFilter]);
+  }, [orders, search, statusFilter, dateFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const sortedOrders = useMemo(() => {
+    const direction = sort.direction === 'asc' ? 1 : -1;
+    return [...filteredOrders].sort((left, right) => {
+      let comparison = 0;
+      if (sort.key === 'customer') {
+        comparison = getCustomerName(left).localeCompare(getCustomerName(right));
+      } else if (sort.key === 'amount') {
+        comparison = Number(left.total_amount ?? 0) - Number(right.total_amount ?? 0);
+      } else {
+        comparison =
+          new Date(left.created_at || 0).getTime() -
+          new Date(right.created_at || 0).getTime();
+      }
+      return comparison * direction;
+    });
+  }, [filteredOrders, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedOrders.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const pageItems = filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pageItems = sortedOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const summary = useMemo(() => {
     const counts = {
@@ -104,7 +142,32 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
     return counts;
   }, [orders]);
 
-  const customerName = (order: any) => order.customers?.display_name || order.customers?.wa_id || 'Customer';
+  const customerName = getCustomerName;
+
+  function toggleSort(key: 'customer' | 'amount' | 'created') {
+    setSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+    setPage(1);
+  }
+
+  function sortLabel(label: string, key: 'customer' | 'amount' | 'created') {
+    const active = sort.key === key;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleSort(key)}
+        aria-label={`Sort by ${label}${active ? `, ${sort.direction === 'asc' ? 'ascending' : 'descending'}` : ''}`}
+        className="inline-flex min-h-8 items-center gap-1 text-left hover:text-stone-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+      >
+        {label}
+        <span aria-hidden="true" className="text-stone-400">
+          {active ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    );
+  }
 
   const statusSummary = [
     { label: 'Total', value: summary.total },
@@ -128,7 +191,6 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
             <p className="text-lg font-medium text-stone-900">No orders yet</p>
             <p className="mt-1 text-sm text-stone-500">Orders created from WhatsApp will appear here once your store starts selling.</p>
           </div>
-          <Button variant="primary" className="h-10 px-4 text-sm">Create order</Button>
         </div>
       </main>
     );
@@ -138,7 +200,7 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Orders</h1>
-        <div className="flex w-full max-w-md items-center gap-2 sm:w-auto">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
           <label className="flex flex-1 items-center gap-2 surface-card px-3 py-2 text-sm text-stone-500">
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
               <circle cx="11" cy="11" r="5.5" />
@@ -150,13 +212,43 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
                 setSearch(event.target.value);
                 setPage(1);
               }}
+              aria-label="Search orders"
               placeholder="Search orders"
               className="w-full bg-transparent text-stone-700 placeholder:text-stone-400 focus:outline-none"
             />
           </label>
-          <Button variant="secondary" className="h-10 px-3 text-sm">Filter</Button>
-          <Button variant="secondary" className="h-10 px-3 text-sm">Date</Button>
-          <Button variant="secondary" className="h-10 px-3 text-sm">Status</Button>
+          <label className="sr-only" htmlFor="order-status-filter">Filter orders by status</label>
+          <select
+            id="order-status-filter"
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
+              setPage(1);
+            }}
+            className="h-10 rounded-sm border border-stone-300 bg-white px-3 text-sm text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+          >
+            <option value="all">All statuses</option>
+            <option value="processing">Processing</option>
+            <option value="pending_payment">Pending payment</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <label className="sr-only" htmlFor="order-date-filter">Filter orders by date</label>
+          <select
+            id="order-date-filter"
+            value={dateFilter}
+            onChange={(event) => {
+              setDateFilter(event.target.value);
+              setPage(1);
+            }}
+            className="h-10 rounded-sm border border-stone-300 bg-white px-3 text-sm text-stone-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+          >
+            <option value="all">Any date</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </select>
         </div>
       </div>
 
@@ -170,14 +262,20 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
       </div>
 
       <div className="overflow-hidden surface-card">
-        <div className="hidden border-b border-stone-200 bg-stone-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500 sm:grid sm:grid-cols-[1.1fr_1.4fr_1.5fr_0.9fr_0.9fr_0.9fr_0.7fr_0.6fr]">
+        <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
+          <h2 className="text-sm font-semibold text-stone-900">All orders</h2>
+          <span className="text-xs text-stone-500">
+            {filteredOrders.length} {filteredOrders.length === 1 ? 'order' : 'orders'}
+          </span>
+        </div>
+        <div className="hidden border-b border-stone-200 bg-stone-100 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-600 sm:grid sm:grid-cols-[1.1fr_1.4fr_1.5fr_0.9fr_0.9fr_0.9fr_0.7fr_0.6fr]">
           <div className="px-4 py-3">Order ID</div>
-          <div className="px-4 py-3">Customer</div>
+          <div className="px-4 py-3">{sortLabel('Customer', 'customer')}</div>
           <div className="px-4 py-3">Products</div>
-          <div className="px-4 py-3">Amount</div>
+          <div className="px-4 py-3">{sortLabel('Amount', 'amount')}</div>
           <div className="px-4 py-3">Payment</div>
           <div className="px-4 py-3">Status</div>
-          <div className="px-4 py-3">Created</div>
+          <div className="px-4 py-3">{sortLabel('Created', 'created')}</div>
           <div className="px-4 py-3 text-right">Action</div>
         </div>
 
@@ -214,7 +312,7 @@ export function OrdersBoard({ orders }: { orders: any[] }) {
         )}
       </div>
 
-      {filteredOrders.length > PAGE_SIZE && (
+      {sortedOrders.length > PAGE_SIZE && (
         <div className="mt-4 flex items-center justify-between text-sm text-stone-500">
           <span>
             Page {currentPage} of {totalPages}

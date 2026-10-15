@@ -33,12 +33,11 @@ export function InboxBoard({ conversations }: { conversations: any[] }) {
   if (!conversations.length) {
     return (
       <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
-        <div className="flex min-h-[420px] flex-col items-center justify-center gap-4 border border-dashed border-stone-200 bg-white p-8 text-center">
+        <div className="flex min-h-[420px] flex-col items-center justify-center gap-2 border border-dashed border-stone-200 bg-white p-8 text-center">
           <div>
             <p className="text-lg font-medium text-stone-900">Connect WhatsApp to start receiving orders here</p>
             <p className="mt-1 text-sm text-stone-500">No live inbox is connected yet.</p>
           </div>
-          <Button variant="primary" className="h-10 px-4 text-sm">Connect WhatsApp</Button>
         </div>
       </main>
     );
@@ -122,8 +121,8 @@ export function InboxBoard({ conversations }: { conversations: any[] }) {
                 )}
               </div>
               <p className="mt-4 text-xs text-stone-400">
-                A structured breakdown (product, quantity, price) isn't shown here yet — the AI's
-                extraction result isn't currently saved anywhere the dashboard can read it. Resolve
+                A structured breakdown (product, quantity, price) isn&apos;t shown here yet — the AI&apos;s
+                extraction result isn&apos;t currently saved anywhere the dashboard can read it. Resolve
                 or reply to this conversation directly for now.
               </p>
             </div>

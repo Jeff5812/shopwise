@@ -38,15 +38,15 @@ export function Sidebar({
   const storeName = 'My store';
 
   const content = (
-    <div className="flex h-full w-56 flex-col border-r border-stone-200 bg-white">
-      <div className="flex h-14 items-center justify-between gap-2 border-b border-stone-200 px-4">
+    <div className="on-dark flex h-full w-60 flex-col bg-ink p-4 text-cream">
+      <div className="mb-8 flex items-center justify-between gap-2 px-2">
         <Logo size={22} />
-        <button className="text-stone-400 md:hidden" onClick={onClose} aria-label="Close menu">
+        <button className="rounded-lg p-2 text-cream/70 hover:bg-white/10 hover:text-cream lg:hidden" onClick={onClose} aria-label="Close menu">
           <X size={18} />
         </button>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 py-3">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto text-sm">
         {NAV_ITEMS.map((item) => {
           const active = pathname === item.href;
           const Icon = item.icon;
@@ -55,46 +55,48 @@ export function Sidebar({
               key={item.href}
               href={item.href}
               onClick={onClose}
-              className={`flex items-center gap-2.5 rounded-lg border-l-2 px-2.5 py-1.5 text-[13px] transition-all ${
+              aria-current={active ? 'page' : undefined}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
                 active
-                  ? 'border-emerald-600 bg-emerald-50 font-semibold text-emerald-800 shadow-[inset_0_0_0_1px_rgba(5,150,105,0.12)]'
+                  ? 'bg-white/10 font-medium text-cream'
                   : item.accent
-                    ? 'border-transparent font-medium text-stone-600 hover:bg-stone-100 hover:text-stone-900'
-                    : 'border-transparent text-stone-500 hover:bg-stone-100 hover:text-stone-900'
+                    ? 'font-medium text-cream/70 transition hover:bg-white/5 hover:text-cream'
+                    : 'text-cream/70 transition hover:bg-white/5 hover:text-cream'
               }`}
             >
-              <Icon size={15} strokeWidth={1.75} />
+              <span className={`h-4 w-1 shrink-0 rounded-full ${active ? 'bg-brand' : 'bg-transparent'}`} />
+              <Icon size={16} strokeWidth={1.8} />
               <span>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="space-y-0.5 border-t border-stone-200 p-2.5">
+      <div className="mt-4 space-y-1 border-t border-white/10 pt-3">
         <Link
           href="/settings"
           onClick={onClose}
-          className={`flex items-center gap-2.5 rounded-none border-l-2 px-2.5 py-1.5 text-[13px] transition-colors ${
+          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
             pathname === '/settings'
-              ? 'border-stone-900 bg-stone-100 font-semibold text-stone-900'
-              : 'border-transparent text-stone-500 hover:bg-stone-100 hover:text-stone-900'
+              ? 'bg-white/10 font-medium text-cream'
+              : 'text-cream/70 hover:bg-white/5 hover:text-cream'
           }`}
         >
-          <SettingsIcon size={15} strokeWidth={1.75} />
+          <SettingsIcon size={16} strokeWidth={1.8} />
           Settings
         </Link>
         <form action="/logout" method="post">
-          <button type="submit" className="w-full rounded-none border-l-2 border-transparent px-2.5 py-1.5 text-left text-[13px] text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900">
+          <button type="submit" className="w-full rounded-lg px-3 py-2 text-left text-sm text-cream/70 transition-colors hover:bg-white/5 hover:text-cream">
             Sign out
           </button>
         </form>
-        <div className="mt-1 flex items-center gap-2 px-2.5 py-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-stone-200 text-[10px] font-medium text-stone-700">
+        <div className="mt-auto flex items-center gap-3 rounded-lg p-2 text-sm">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sand text-xs font-medium text-ink">
             {storeName.charAt(0).toUpperCase()}
           </div>
-          <div className="min-w-0 text-[12px] leading-tight">
-            <p className="truncate font-medium text-stone-800">{storeName}</p>
-            <p className="text-stone-400">Free plan</p>
+          <div className="min-w-0 leading-tight">
+            <p className="truncate font-medium text-cream">{storeName}</p>
+            <p className="text-xs text-cream/70">Free plan</p>
           </div>
         </div>
       </div>
@@ -103,12 +105,12 @@ export function Sidebar({
 
   return (
     <>
-      <div className="hidden md:flex">{content}</div>
+      <div className="hidden lg:flex">{content}</div>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-          <aside className="absolute inset-y-0 left-0 z-50 w-56 bg-white">{content}</aside>
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button type="button" aria-label="Close menu" className="absolute inset-0 bg-ink/40" onClick={onClose} />
+          <aside className="absolute inset-y-0 left-0 z-50">{content}</aside>
         </div>
       )}
     </>

@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Badge } from '@/components/Badge';
+import { useMemo } from 'react';
 
 function formatMoney(value: number | null | undefined) {
   const numeric = Number(value ?? 0);
@@ -24,13 +23,9 @@ export function AnalyticsBoard({
   topProducts: { name: string; value: number }[];
   topCustomers: { name: string; value: number }[];
 }) {
-  const [range, setRange] = useState<'7d' | '30d' | '90d' | 'custom'>('7d');
-
   const maxSales = Math.max(...salesSeries.map((entry) => entry.value), 1);
   const maxProducts = Math.max(...topProducts.map((entry) => entry.value), 1);
   const maxCustomers = Math.max(...topCustomers.map((entry) => entry.value), 1);
-
-  const tabItems = ['7d', '30d', '90d', 'custom'] as const;
 
   const metrics = useMemo(
     () => [
@@ -46,27 +41,14 @@ export function AnalyticsBoard({
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
       <div className="mb-5 flex items-center justify-between gap-3">
         <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Analytics</h1>
-        <div className="flex items-center gap-4">
-          {tabItems.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setRange(item)}
-              className={`border-b-2 pb-1 text-sm font-medium transition-colors ${
-                range === item ? 'border-stone-900 text-stone-900' : 'border-transparent text-stone-400 hover:text-stone-600'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+        <span className="text-sm text-stone-500">Last 7 days</span>
       </div>
 
       <div className="mb-8 grid grid-cols-2 gap-px border border-stone-200 bg-stone-200 md:grid-cols-4">
         {metrics.map((metric) => (
           <div key={metric.label} className="bg-white p-3.5">
             <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-400">{metric.label}</p>
-            <p className="mt-3 font-data text-3xl tracking-tight text-stone-900">{metric.value}</p>
+            <p className="mt-3 font-data text-2xl tracking-tight text-stone-900 sm:text-3xl">{metric.value}</p>
           </div>
         ))}
       </div>
@@ -81,7 +63,7 @@ export function AnalyticsBoard({
             {salesSeries.map((entry) => (
               <div key={entry.label} className="flex flex-1 flex-col items-center gap-2">
                 <div className="flex h-28 w-full items-end justify-center">
-                  <div className="w-full max-w-9 rounded-none bg-stone-800" style={{ height: `${Math.max((entry.value / maxSales) * 100, 12)}%` }} />
+                  <div className="w-full max-w-9 rounded-none bg-[#1F5F46]" style={{ height: `${Math.max((entry.value / maxSales) * 100, 12)}%` }} />
                 </div>
                 <span className="text-[10px] uppercase tracking-[0.12em] text-stone-400">{entry.label}</span>
               </div>
@@ -99,7 +81,7 @@ export function AnalyticsBoard({
                   <span className="font-data text-stone-900">{formatMoney(item.value)}</span>
                 </div>
                 <div className="h-1.5 w-full overflow-hidden bg-stone-100">
-                  <div className="h-full bg-stone-800" style={{ width: `${Math.max((item.value / maxProducts) * 100, 10)}%` }} />
+                  <div className="h-full bg-[#1F5F46]" style={{ width: `${Math.max((item.value / maxProducts) * 100, 10)}%` }} />
                 </div>
               </div>
             ))}
@@ -118,7 +100,7 @@ export function AnalyticsBoard({
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] uppercase tracking-[0.12em] text-stone-400">Share</span>
                   <div className="h-1.5 flex-1 overflow-hidden bg-stone-100">
-                    <div className="h-full bg-stone-700" style={{ width: `${Math.max((item.value / maxCustomers) * 100, 10)}%` }} />
+                    <div className="h-full bg-[#1F5F46]" style={{ width: `${Math.max((item.value / maxCustomers) * 100, 10)}%` }} />
                   </div>
                 </div>
               </div>

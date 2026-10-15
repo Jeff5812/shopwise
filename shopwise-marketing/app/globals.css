@@ -1,0 +1,115 @@
+@import 'tailwindcss';
+
+:root {
+  --cream: #F7F3EE;
+  --paper: #FCFAF7;
+  --sand: #DDD0C8;
+  --sand-soft: #EAE1DA;
+  --ink: #323232;
+  --ink-soft: #6B635D;
+  --brand: #1DB954;
+  --brand-hover: #1ED760;
+  --on-brand: #323232;
+  --warn: #B7791F;
+  --danger: #B3402F;
+  --canvas: var(--cream);
+  --card: var(--paper);
+  --text: var(--ink);
+  --text-muted: var(--ink-soft);
+  --border: var(--sand);
+  --brand-tint: var(--sand);
+  --warning: var(--warn);
+  --success: var(--brand);
+  --radius-control: 8px;
+  --radius-button: 12px;
+  --radius-card: 16px;
+}
+
+@theme inline {
+  --color-cream: var(--cream);
+  --color-paper: var(--paper);
+  --color-sand: var(--sand);
+  --color-sand-soft: var(--sand-soft);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-on-brand: var(--on-brand);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-foreground: var(--text);
+  --color-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-brand-tint: var(--brand-tint);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --shadow-card: 0 1px 2px rgba(50, 50, 50, 0.06), 0 10px 28px -14px rgba(50, 50, 50, 0.22);
+  --shadow-lift: 0 2px 4px rgba(50, 50, 50, 0.08), 0 24px 48px -18px rgba(50, 50, 50, 0.32);
+  --font-serif: var(--font-source-serif), Georgia, serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-source-serif), Georgia, serif;
+}
+
+.page-shell {
+  width: 100%;
+  max-width: 1152px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+.section {
+  padding-block: 96px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.on-dark :focus-visible {
+  outline-color: var(--cream);
+}
+
+@media (max-width: 767px) {
+  .section {
+    padding-block: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -8,12 +8,14 @@ export function Button({
   className?: string;
   children: React.ReactNode;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const base = 'inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold px-3.5 py-2 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed active:translate-y-px';
+  const base =
+    'btn-press inline-flex items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold px-4 py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed';
   const variants = {
-    primary: 'surface-emerald text-white hover:brightness-110',
-    secondary: 'bg-white border border-stone-300 text-stone-800 shadow-[0_1px_2px_rgba(28,25,23,0.06)] hover:bg-stone-50 hover:shadow-[0_2px_6px_rgba(28,25,23,0.1)] active:bg-stone-100',
+    // Text on green is always dark (white on #1DB954 fails contrast).
+    primary: 'bg-emerald-600 text-stone-900 hover:bg-emerald-500',
+    secondary: 'bg-white border border-stone-200 text-stone-900 hover:bg-stone-100',
     ghost: 'text-stone-600 hover:bg-stone-100 active:bg-stone-200',
-    danger: 'bg-gradient-to-b from-rose-600 to-rose-700 text-white shadow-[0_1px_2px_rgba(190,18,60,0.3),0_6px_16px_-6px_rgba(190,18,60,0.5)] hover:brightness-110',
+    danger: 'bg-danger text-white hover:bg-[#8F3325]',
   };
 
   return (
