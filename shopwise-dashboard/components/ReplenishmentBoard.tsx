@@ -24,10 +24,10 @@ export function ReplenishmentBoard({ items }: { items: any[] }) {
       <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Replenishment</h1>
+            <h1 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">Replenishment</h1>
           </div>
         </div>
-        <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 border border-dashed border-stone-200 bg-white p-8 text-center">
+        <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-stone-200 bg-white p-8 text-center">
           <div>
             <p className="text-lg font-medium text-stone-900">No replenishment items</p>
             <p className="mt-1 text-sm text-stone-500">Stock levels will appear here when the inventory feed has data to review.</p>
@@ -39,9 +39,9 @@ export function ReplenishmentBoard({ items }: { items: any[] }) {
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Replenishment</h1>
-        <label className="flex w-full max-w-md items-center gap-2 surface-card px-3 py-2 text-sm text-stone-500">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">Replenishment</h1>
+        <label className="flex w-full max-w-md items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-500 focus-within:border-stone-900 focus-within:ring-4 focus-within:ring-stone-900/10">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
             <circle cx="11" cy="11" r="5.5" />
             <path d="M16 16l4.5 4.5" strokeLinecap="round" />
@@ -50,29 +50,29 @@ export function ReplenishmentBoard({ items }: { items: any[] }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search inventory"
-            className="w-full bg-transparent text-stone-700 placeholder:text-stone-400 focus:outline-none"
+            className="w-full bg-transparent text-stone-900 placeholder:text-stone-400 focus:outline-none"
           />
         </label>
       </div>
 
-      <div className="divide-y divide-stone-100 overflow-hidden border border-stone-200 bg-white">
+      <div className="divide-y divide-stone-100 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-card">
         {filtered.map((item) => (
-          <div key={item.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div key={item.id} className="flex flex-col gap-3 px-5 py-5 transition-colors hover:bg-stone-200/25 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-stone-800">{item.name || 'Product'}</span>
+                <span className="text-sm font-semibold text-stone-900">{item.name || 'Product'}</span>
                 <span className="font-data text-[11px] text-stone-400">{item.sku || '—'}</span>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-stone-500">
-                <span>Current stock <span className="font-data text-stone-800">{item.stock_quantity ?? 0}</span></span>
-                <span>Days left <span className="font-data text-stone-800">{item.days_left ?? '—'}</span></span>
-                <span>Reorder qty <span className="font-data text-stone-800">{item.recommended_qty ?? '—'}</span></span>
+              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-stone-500">
+                <span>Current stock <span className="font-data font-medium text-stone-900">{item.stock_quantity ?? 0}</span></span>
+                <span>Days left <span className="font-data font-medium text-stone-900">{item.days_left ?? '—'}</span></span>
+                <span>Reorder qty <span className="font-data font-medium text-stone-900">{item.recommended_qty ?? '—'}</span></span>
               </div>
-              <p className="mt-2 text-sm text-stone-500">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
                 {item.reasoning || 'No reorder recommendation available yet for this item.'}
               </p>
             </div>
-            <Button variant="secondary" className="h-9 px-3 text-sm">Review</Button>
+            <Button variant="secondary" className="h-10 px-4 text-sm">Review</Button>
           </div>
         ))}
       </div>

@@ -1,10 +1,9 @@
 import type { Metadata } from 'next';
-import { Manrope, Lora } from 'next/font/google';
 import { AppShell } from '@/components/AppShell';
+// Fonts are bundled with the app (no request to Google at runtime or build time).
+import '@fontsource-variable/inter';
+import '@fontsource-variable/source-serif-4';
 import './globals.css';
-
-const manrope = Manrope({ subsets: ['latin'], weight: ['400', '500', '600'] });
-const lora = Lora({ subsets: ['latin'], variable: '--font-lora' });
 
 export const metadata: Metadata = {
   title: 'Shopwise',
@@ -13,8 +12,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={lora.variable}>
-      <body className={`${manrope.className} bg-stone-50 text-stone-900 antialiased`}>
+    <html lang="en">
+      <body className="bg-stone-50 font-sans text-stone-900 antialiased">
         <AppShell>{children}</AppShell>
       </body>
     </html>

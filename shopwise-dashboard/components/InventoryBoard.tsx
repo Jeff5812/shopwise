@@ -79,28 +79,35 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
       <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Inventory</h1>
+            <h1 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">Inventory</h1>
           </div>
         </div>
 
-        <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 border border-dashed border-stone-200 bg-white p-8 text-center">
+        <div className="flex min-h-[360px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-stone-200 bg-white p-8 text-center">
           <div>
             <p className="text-lg font-medium text-stone-900">No products yet</p>
             <p className="mt-1 text-sm text-stone-500">Add stock to start tracking inventory levels and replenishment.</p>
           </div>
-          <Button variant="primary" className="h-10 px-4 text-sm">Add product</Button>
+          <Button variant="primary" className="h-11 px-5 text-sm">Add product</Button>
         </div>
       </main>
     );
   }
 
+  const summaryItems = [
+    { label: 'Total products', value: String(summary.totalProducts) },
+    { label: 'Low stock', value: String(summary.lowStock) },
+    { label: 'Out of stock', value: String(summary.outOfStock) },
+    { label: 'Inventory value', value: formatMoney(summary.inventoryValue) },
+  ];
+
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
       {adding && <AddProductForm vendorId={vendorId} onClose={() => setAdding(false)} />}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Inventory</h1>
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">Inventory</h1>
         <div className="flex w-full max-w-lg items-center gap-2 sm:w-auto">
-          <label className="flex flex-1 items-center gap-2 surface-card px-3 py-2 text-sm text-stone-500">
+          <label className="flex flex-1 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-500 focus-within:border-stone-900 focus-within:ring-4 focus-within:ring-stone-900/10">
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
               <circle cx="11" cy="11" r="5.5" />
               <path d="M16 16l4.5 4.5" strokeLinecap="round" />
@@ -109,32 +116,22 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search product"
-              className="w-full bg-transparent text-stone-700 placeholder:text-stone-400 focus:outline-none"
+              className="w-full bg-transparent text-stone-900 placeholder:text-stone-400 focus:outline-none"
             />
           </label>
-          <Button className="h-10 px-3 text-sm" onClick={() => setAdding(true)}>Add product</Button>
-          <Button variant="secondary" className="h-10 px-3 text-sm">Category</Button>
-          <Button variant="secondary" className="h-10 px-3 text-sm">Status</Button>
+          <Button className="h-11 px-4 text-sm" onClick={() => setAdding(true)}>Add product</Button>
+          <Button variant="secondary" className="h-11 px-4 text-sm">Category</Button>
+          <Button variant="secondary" className="h-11 px-4 text-sm">Status</Button>
         </div>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-stone-500">
-        <div className="flex items-center gap-2">
-          <span>Total products</span>
-          <span className="font-data text-base text-stone-900">{summary.totalProducts}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span>Low stock</span>
-          <span className="font-data text-base text-stone-900">{summary.lowStock}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span>Out of stock</span>
-          <span className="font-data text-base text-stone-900">{summary.outOfStock}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span>Inventory value</span>
-          <span className="font-data text-base text-stone-900">{formatMoney(summary.inventoryValue)}</span>
-        </div>
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {summaryItems.map((item) => (
+          <div key={item.label} className="surface-card p-4">
+            <p className="text-sm text-stone-500">{item.label}</p>
+            <p className="mt-2 font-serif text-2xl font-semibold tabular-nums text-stone-900">{item.value}</p>
+          </div>
+        ))}
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -143,19 +140,20 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
             key={status}
             type="button"
             onClick={() => setFilter(status)}
-            className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+            aria-pressed={filter === status}
+            className={`rounded-full border px-3.5 py-1.5 text-sm capitalize transition-colors ${
               filter === status
-                ? 'border-stone-900 bg-stone-100 text-stone-900'
-                : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+                ? 'border-stone-900 bg-stone-900 text-stone-50'
+                : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-100'
             }`}
           >
-            {status === 'all' ? 'All' : status.replace('_', ' ')}
+            {status === 'all' ? 'All' : status.replace(/_/g, ' ')}
           </button>
         ))}
       </div>
 
       <div className="overflow-hidden surface-card">
-        <div className="hidden border-b border-stone-200 bg-stone-50 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500 md:grid md:grid-cols-[1.6fr_1fr_0.9fr_0.8fr_0.8fr_0.8fr_0.7fr]">
+        <div className="hidden border-b border-stone-200 bg-stone-200/30 text-xs font-medium text-stone-500 md:grid md:grid-cols-[1.6fr_1fr_0.9fr_0.8fr_0.8fr_0.8fr_0.7fr]">
           <div className="px-4 py-3">Product</div>
           <div className="px-4 py-3">SKU</div>
           <div className="px-4 py-3">Stock</div>
@@ -170,9 +168,9 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
             key={item.id}
             type="button"
             onClick={() => setSelectedProduct(item)}
-            className="block w-full border-b border-stone-100 text-left transition-colors last:border-0 hover:bg-stone-50 md:grid md:grid-cols-[1.6fr_1fr_0.9fr_0.8fr_0.8fr_0.8fr_0.7fr]"
+            className="block w-full items-center border-b border-stone-100 text-left transition-colors last:border-0 hover:bg-stone-200/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-stone-900 md:grid md:grid-cols-[1.6fr_1fr_0.9fr_0.8fr_0.8fr_0.8fr_0.7fr]"
           >
-            <div className="px-4 py-3 text-sm text-stone-800">{item.name || 'Unnamed product'}</div>
+            <div className="px-4 py-3 text-sm font-medium text-stone-900">{item.name || 'Unnamed product'}</div>
             <div className="px-4 py-3 font-data text-sm text-stone-600">{item.sku || '—'}</div>
             <div className="px-4 py-3 font-data text-sm text-stone-900">{item.stock_quantity ?? 0}</div>
             <div className="px-4 py-3 font-data text-sm text-stone-600">{formatMoney(item.cost_price)}</div>
@@ -186,32 +184,39 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
       </div>
 
       {activeProduct && (
-        <div className="fixed inset-0 z-50 bg-stone-900/20" onClick={() => setSelectedProduct(null)}>
-          <div className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-stone-200 bg-white" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-stone-900/30" onClick={() => setSelectedProduct(null)}>
+          <div className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-stone-200 bg-white shadow-lift" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">Product details</p>
-                <h2 className="mt-1 text-xl font-semibold text-stone-900">{activeProduct.name || 'Product'}</h2>
+                <p className="text-xs font-medium text-stone-500">Product details</p>
+                <h2 className="mt-1 font-serif text-xl font-semibold text-stone-900">{activeProduct.name || 'Product'}</h2>
               </div>
-              <button type="button" onClick={() => setSelectedProduct(null)} className="text-stone-500 hover:text-stone-900">✕</button>
+              <button
+                type="button"
+                aria-label="Close product details"
+                onClick={() => setSelectedProduct(null)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+              >
+                ✕
+              </button>
             </div>
 
             <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">SKU</p>
-                  <p className="mt-2 font-data text-sm text-stone-800">{activeProduct.sku || '—'}</p>
+                  <p className="text-xs font-medium text-stone-500">SKU</p>
+                  <p className="mt-1.5 font-data text-sm text-stone-900">{activeProduct.sku || '—'}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Stock</p>
-                  <p className="mt-2 font-data text-sm text-stone-800">{activeProduct.stock_quantity ?? 0}</p>
+                  <p className="text-xs font-medium text-stone-500">Stock</p>
+                  <p className="mt-1.5 font-data text-sm text-stone-900">{activeProduct.stock_quantity ?? 0}</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2"><Badge status={activeProduct.status} /></div>
 
               <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-stone-400">Variants &amp; stock</p>
+                <p className="mb-2 text-xs font-medium text-stone-500">Variants &amp; stock</p>
                 <div className="space-y-2">
                   {(activeProduct.variants || []).length === 0 && (
                     <p className="text-sm text-stone-500">No variants recorded for this product.</p>
@@ -220,9 +225,9 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
                     const label = [variant.size, variant.color].filter(Boolean).join(' / ') || 'Default';
                     const currentEdit = editValues[variant.id] ?? String(variant.stock_quantity);
                     return (
-                      <div key={variant.id} className="flex items-center justify-between gap-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+                      <div key={variant.id} className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
                         <div>
-                          <p className="text-sm font-medium text-stone-800">{label}</p>
+                          <p className="text-sm font-medium text-stone-900">{label}</p>
                           <p className="text-xs text-stone-500">Current stock: {variant.stock_quantity}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -230,12 +235,13 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
                             type="number"
                             min={0}
                             value={currentEdit}
+                            aria-label={`Stock for ${label}`}
                             onChange={(event) => setEditValues((prev) => ({ ...prev, [variant.id]: event.target.value }))}
-                            className="w-20 rounded-md border border-stone-300 px-2 py-1.5 text-sm text-stone-800 focus:border-stone-500 focus:outline-none"
+                            className="w-20 rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm tabular-nums text-stone-900 focus:border-stone-900 focus:outline-none focus:ring-4 focus:ring-stone-900/10"
                           />
                           <Button
                             variant="secondary"
-                            className="h-9 px-3 text-sm"
+                            className="h-10 px-3.5 text-sm"
                             onClick={() => handleStockSave(variant.id)}
                             disabled={pendingVariantId === variant.id}
                           >
@@ -246,45 +252,45 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
                     );
                   })}
                 </div>
-                {stockError && <p className="mt-2 text-sm text-rose-600">{stockError}</p>}
+                {stockError && <p className="mt-2 text-sm text-danger">{stockError}</p>}
               </div>
 
-              <div className="grid grid-cols-2 gap-3 rounded-md border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
+              <div className="grid grid-cols-2 gap-4 rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-600">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Units sold</p>
-                  <p className="mt-2 font-data text-stone-800">{activeProduct.units_sold ?? 'Not available'}</p>
+                  <p className="text-xs font-medium text-stone-500">Units sold</p>
+                  <p className="mt-1.5 font-data text-stone-900">{activeProduct.units_sold ?? 'Not available'}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Velocity</p>
-                  <p className="mt-2 font-data text-stone-800">{activeProduct.sales_velocity ?? 'Not available'}</p>
+                  <p className="text-xs font-medium text-stone-500">Velocity</p>
+                  <p className="mt-1.5 font-data text-stone-900">{activeProduct.sales_velocity ?? 'Not available'}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Cost</p>
-                  <p className="mt-2 font-data text-stone-800">{activeProduct.cost_price ? formatMoney(activeProduct.cost_price) : 'Not available'}</p>
+                  <p className="text-xs font-medium text-stone-500">Cost</p>
+                  <p className="mt-1.5 font-data text-stone-900">{activeProduct.cost_price ? formatMoney(activeProduct.cost_price) : 'Not available'}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Price</p>
-                  <p className="mt-2 font-data text-stone-800">{activeProduct.price ? formatMoney(Number(activeProduct.price)) : 'Not available'}</p>
+                  <p className="text-xs font-medium text-stone-500">Price</p>
+                  <p className="mt-1.5 font-data text-stone-900">{activeProduct.price ? formatMoney(Number(activeProduct.price)) : 'Not available'}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Profit</p>
-                  <p className="mt-2 font-data text-stone-800">{activeProduct.cost_price && (activeProduct.price) ? formatMoney(Number(activeProduct.price) - Number(activeProduct.cost_price)) : 'Not available'}</p>
+                  <p className="text-xs font-medium text-stone-500">Profit</p>
+                  <p className="mt-1.5 font-data text-stone-900">{activeProduct.cost_price && (activeProduct.price) ? formatMoney(Number(activeProduct.price) - Number(activeProduct.cost_price)) : 'Not available'}</p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.12em] text-stone-400">Supplier</p>
-                  <p className="mt-2 text-stone-800">{activeProduct.supplier_name || activeProduct.supplier || 'Not available in current data model'}</p>
+                  <p className="text-xs font-medium text-stone-500">Supplier</p>
+                  <p className="mt-1.5 text-stone-900">{activeProduct.supplier_name || activeProduct.supplier || 'Not available in current data model'}</p>
                 </div>
               </div>
 
               <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-stone-400">Stock history</p>
-                <div className="rounded-md border border-stone-200 bg-stone-50 p-3 text-sm text-stone-500">
+                <p className="mb-2 text-xs font-medium text-stone-500">Stock history</p>
+                <div className="rounded-xl border border-stone-200 bg-stone-50 p-3 text-sm text-stone-500">
                   {activeProduct.stock_history && activeProduct.stock_history.length ? (
                     <div className="space-y-2">
                       {activeProduct.stock_history.slice(0, 4).map((entry: any, idx: number) => (
                         <div key={`${entry.date || 'entry'}-${idx}`} className="flex items-center justify-between gap-3">
                           <span>{entry.date || 'Unknown date'}</span>
-                          <span className="font-data text-stone-800">{entry.stock ?? '—'}</span>
+                          <span className="font-data text-stone-900">{entry.stock ?? '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -295,7 +301,7 @@ export function InventoryBoard({ inventory, vendorId }: { inventory: any[]; vend
               </div>
 
               <div>
-                <p className="mb-2 text-xs uppercase tracking-[0.12em] text-stone-400">Last restock</p>
+                <p className="mb-2 text-xs font-medium text-stone-500">Last restock</p>
                 <p className="text-sm text-stone-600">{activeProduct.last_restock || 'No restock history available yet.'}</p>
               </div>
             </div>

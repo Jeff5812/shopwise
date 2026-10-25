@@ -1,0 +1,286 @@
+@import 'tailwindcss';
+
+/*
+  Shopwise palette: Spotify green + beige #DDD0C8 + dark grey #323232 + cream.
+  Green is a FILL (buttons, tick tiles, status dots). Text on green is always dark.
+  Green text is only used on dark panels, or as the deep text-safe green (brand-ink).
+*/
+:root {
+  --canvas: #f7f3ee;
+  --card: #fcfaf7;
+  --text: #323232;
+  --text-muted: #6b635d;
+  --border: #ddd0c8;
+  --border-soft: #eae1da;
+  --brand: #1db954;
+  --brand-hover: #1ed760;
+  --brand-tint: #e6f6ec;
+  --brand-ink: #0f5c2b;
+  --on-brand: #323232;
+  --danger: #b3402f;
+  --warning: #b7791f;
+  --success: var(--brand);
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --font-shopwise-serif: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
+  --font-shopwise-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-foreground: var(--text);
+  --color-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-tint: var(--brand-tint);
+  --color-brand-ink: var(--brand-ink);
+  --color-on-brand: var(--on-brand);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-ink: #323232;
+  --color-sand: #ddd0c8;
+  --color-cream: #f7f3ee;
+  --font-serif: var(--font-shopwise-serif);
+  --font-sans: var(--font-shopwise-sans);
+  --shadow-card: 0 1px 2px rgba(50, 50, 50, 0.06), 0 10px 28px -14px rgba(50, 50, 50, 0.22);
+  --shadow-lift: 0 2px 4px rgba(50, 50, 50, 0.08), 0 24px 48px -18px rgba(50, 50, 50, 0.32);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 88px;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-shopwise-sans);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-shopwise-serif);
+  font-optical-sizing: auto;
+}
+
+.page-shell {
+  width: 100%;
+  max-width: 1152px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+.section {
+  padding-block: 96px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+.on-dark :focus-visible {
+  outline-color: var(--canvas);
+}
+
+@media (max-width: 767px) {
+  .section {
+    padding-block: 64px;
+  }
+}
+
+/* Soft warm light behind the hero, so the cream is not one flat colour. */
+.hero-light {
+  background:
+    radial-gradient(60% 55% at 85% 12%, rgba(221, 208, 200, 0.75), transparent 70%),
+    radial-gradient(40% 40% at 5% 0%, rgba(29, 185, 84, 0.07), transparent 70%);
+}
+
+/* Glow behind phones on the dark band. */
+.phone-glow {
+  background: radial-gradient(closest-side, rgba(29, 185, 84, 0.5), rgba(29, 185, 84, 0.12) 60%, transparent 100%);
+}
+
+/* ---------- Motion: it answers a hover, a click, a scroll, or tells the product story ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .btn-press {
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease,
+      border-color 0.2s ease;
+  }
+  .btn-press:active {
+    transform: scale(0.95);
+    transition: transform 0.08s ease-out;
+  }
+
+  /* Cards rise a little under the cursor. */
+  .lift {
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .lift:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lift);
+  }
+
+  /* One orchestrated entrance for the hero, once, on load. */
+  .rise {
+    animation: rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .rise-2 { animation-delay: 0.08s; }
+  .rise-3 { animation-delay: 0.16s; }
+  .rise-4 { animation-delay: 0.26s; }
+
+  /* Scroll reveal: below-the-fold blocks rise in once. Above-the-fold content is
+     never hidden (see components/Reveal.tsx). */
+  .reveal {
+    transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal[data-reveal='pending'] {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+
+  /* Gentle float for small floating chips. */
+  .float-a { animation: float-y 5s ease-in-out infinite; }
+  .float-b { animation: float-y 6.5s ease-in-out -2.2s infinite; }
+  @keyframes float-y {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  /* Typing dots */
+  .typing-dot { animation: typing 1.2s ease-in-out infinite; }
+  .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes typing {
+    0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-3px); }
+  }
+
+  /* Arrow nudge on primary buttons */
+  .btn-arrow .arrow { transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .btn-arrow:hover .arrow { transform: translateX(4px); }
+
+  /* Hero product story: one 10s loop, pure CSS (no JS, no flash, SSR-safe).
+     message in, typing, reply, customer confirms, order appears, vendor confirms,
+     stock moves, two notes pop in. */
+  .demo-b1 { animation: demo-b1 10s cubic-bezier(0.16, 1, 0.3, 1) infinite both; }
+  .demo-b2 { animation: demo-b2 10s cubic-bezier(0.16, 1, 0.3, 1) infinite both; }
+  .demo-b3 { animation: demo-b3 10s cubic-bezier(0.16, 1, 0.3, 1) infinite both; }
+  .demo-row { animation: demo-row 10s cubic-bezier(0.16, 1, 0.3, 1) infinite both; }
+  .demo-await { animation: demo-await 10s ease infinite both; }
+  .demo-done { animation: demo-done 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite both; }
+  .demo-stock-old { animation: demo-stock-old 10s ease infinite both; }
+  .demo-stock-new { animation: demo-stock-new 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite both; }
+  .demo-toast { animation: demo-toast 10s cubic-bezier(0.18, 1.25, 0.4, 1) infinite both; }
+  .demo-typing { animation: demo-typing 10s ease infinite both; }
+  .demo-chip-a { animation: demo-chip-a 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite both; }
+  .demo-chip-b { animation: demo-chip-b 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite both; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes demo-b1 {
+    0%, 4% { opacity: 0; transform: translateY(10px); }
+    8%, 93% { opacity: 1; transform: none; }
+    97%, 100% { opacity: 0; transform: none; }
+  }
+  @keyframes demo-b2 {
+    0%, 16% { opacity: 0; transform: translateY(10px); }
+    20%, 93% { opacity: 1; transform: none; }
+    97%, 100% { opacity: 0; transform: none; }
+  }
+  @keyframes demo-b3 {
+    0%, 30% { opacity: 0; transform: translateY(10px); }
+    34%, 93% { opacity: 1; transform: none; }
+    97%, 100% { opacity: 0; transform: none; }
+  }
+  @keyframes demo-row {
+    0%, 36% { opacity: 0; transform: translateY(8px); }
+    40%, 93% { opacity: 1; transform: none; }
+    97%, 100% { opacity: 0; transform: none; }
+  }
+  @keyframes demo-await {
+    0%, 38% { opacity: 0; }
+    42%, 57% { opacity: 1; }
+    61%, 100% { opacity: 0; }
+  }
+  @keyframes demo-done {
+    0%, 58% { opacity: 0; transform: scale(0.9); }
+    63%, 93% { opacity: 1; transform: scale(1); }
+    97%, 100% { opacity: 0; transform: scale(1); }
+  }
+  @keyframes demo-stock-old {
+    0%, 57% { opacity: 1; }
+    61%, 93% { opacity: 0; }
+    97%, 100% { opacity: 1; }
+  }
+  @keyframes demo-stock-new {
+    0%, 58% { opacity: 0; transform: scale(0.8); }
+    63%, 93% { opacity: 1; transform: scale(1); }
+    97%, 100% { opacity: 0; transform: scale(1); }
+  }
+  @keyframes demo-toast {
+    0%, 58% { opacity: 0; transform: translateY(16px) scale(0.9); }
+    63% { opacity: 1; transform: translateY(-4px) scale(1.03); }
+    66%, 80% { opacity: 1; transform: none; }
+    88%, 100% { opacity: 0; transform: translateY(6px); }
+  }
+  @keyframes demo-typing {
+    0%, 7% { opacity: 0; }
+    9%, 15% { opacity: 1; }
+    17%, 100% { opacity: 0; }
+  }
+  @keyframes demo-chip-a {
+    0%, 60% { opacity: 0; transform: scale(0.8) translateY(8px); }
+    65%, 93% { opacity: 1; transform: none; }
+    97%, 100% { opacity: 0; transform: none; }
+  }
+  @keyframes demo-chip-b {
+    0%, 72% { opacity: 0; transform: scale(0.8) translateY(8px); }
+    77%, 93% { opacity: 1; transform: none; }
+    97%, 100% { opacity: 0; transform: none; }
+  }
+}
+
+/* Static state for reduced motion and before CSS loads: the finished story. */
+.demo-await,
+.demo-stock-old,
+.demo-toast,
+.demo-typing {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Badge } from '@/components/Badge';
+import { useMemo } from 'react';
 
 function formatMoney(value: number | null | undefined) {
   const numeric = Number(value ?? 0);
@@ -24,13 +23,9 @@ export function AnalyticsBoard({
   topProducts: { name: string; value: number }[];
   topCustomers: { name: string; value: number }[];
 }) {
-  const [range, setRange] = useState<'7d' | '30d' | '90d' | 'custom'>('7d');
-
   const maxSales = Math.max(...salesSeries.map((entry) => entry.value), 1);
   const maxProducts = Math.max(...topProducts.map((entry) => entry.value), 1);
   const maxCustomers = Math.max(...topCustomers.map((entry) => entry.value), 1);
-
-  const tabItems = ['7d', '30d', '90d', 'custom'] as const;
 
   const metrics = useMemo(
     () => [
@@ -44,81 +39,72 @@ export function AnalyticsBoard({
 
   return (
     <main className="mx-auto max-w-6xl p-4 sm:p-6 xl:p-8">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <h1 className="text-3xl font-semibold tracking-[-0.05em] text-stone-900">Analytics</h1>
-        <div className="flex items-center gap-4">
-          {tabItems.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setRange(item)}
-              className={`border-b-2 pb-1 text-sm font-medium transition-colors ${
-                range === item ? 'border-stone-900 text-stone-900' : 'border-transparent text-stone-400 hover:text-stone-600'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">Analytics</h1>
+        <span className="text-sm text-stone-500">Last 7 days</span>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-px border border-stone-200 bg-stone-200 md:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4">
         {metrics.map((metric) => (
-          <div key={metric.label} className="bg-white p-3.5">
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-stone-400">{metric.label}</p>
-            <p className="mt-3 font-data text-3xl tracking-tight text-stone-900">{metric.value}</p>
+          <div key={metric.label} className="surface-card p-4 sm:p-5">
+            <p className="text-sm text-stone-500">{metric.label}</p>
+            <p className="mt-3 font-serif text-2xl font-semibold tabular-nums tracking-tight text-stone-900 sm:text-3xl">{metric.value}</p>
           </div>
         ))}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="border border-stone-200 bg-white p-4">
+        <div className="surface-card p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-stone-900">Sales over time</h2>
-            <span className="text-[10px] uppercase tracking-[0.12em] text-stone-400">Revenue</span>
+            <span className="text-xs text-stone-500">Revenue</span>
           </div>
-          <div className="flex h-40 items-end gap-2 pt-3">
+          <div className="flex h-44 items-end gap-2 pt-3">
             {salesSeries.map((entry) => (
               <div key={entry.label} className="flex flex-1 flex-col items-center gap-2">
-                <div className="flex h-28 w-full items-end justify-center">
-                  <div className="w-full max-w-9 rounded-none bg-stone-800" style={{ height: `${Math.max((entry.value / maxSales) * 100, 12)}%` }} />
+                <div className="flex h-32 w-full items-end justify-center">
+                  <div
+                    className="w-full max-w-10 rounded-t-lg bg-emerald-600"
+                    style={{ height: `${Math.max((entry.value / maxSales) * 100, 8)}%` }}
+                    title={`${entry.label}: ${formatMoney(entry.value)}`}
+                  />
                 </div>
-                <span className="text-[10px] uppercase tracking-[0.12em] text-stone-400">{entry.label}</span>
+                <span className="text-xs text-stone-500">{entry.label}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="border border-stone-200 bg-white p-4">
+        <div className="surface-card p-5">
           <h2 className="mb-4 text-sm font-semibold text-stone-900">Top products</h2>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {topProducts.map((item) => (
-              <div key={item.name} className="space-y-1">
+              <div key={item.name} className="space-y-1.5">
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="text-stone-700">{item.name}</span>
                   <span className="font-data text-stone-900">{formatMoney(item.value)}</span>
                 </div>
-                <div className="h-1.5 w-full overflow-hidden bg-stone-100">
-                  <div className="h-full bg-stone-800" style={{ width: `${Math.max((item.value / maxProducts) * 100, 10)}%` }} />
+                <div className="h-2 w-full overflow-hidden rounded-full bg-stone-200/60">
+                  <div className="h-full rounded-full bg-emerald-600" style={{ width: `${Math.max((item.value / maxProducts) * 100, 10)}%` }} />
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="border border-stone-200 bg-white p-4 lg:col-span-2">
+        <div className="surface-card p-5 lg:col-span-2">
           <h2 className="mb-4 text-sm font-semibold text-stone-900">Top customers</h2>
           <div className="space-y-3">
             {topCustomers.map((item) => (
               <div key={item.name} className="grid grid-cols-[1.2fr_0.8fr] gap-3 text-sm">
-                <div className="flex items-center justify-between gap-3 rounded-md border border-stone-200 bg-stone-50 px-3 py-2">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5">
                   <span className="text-stone-700">{item.name}</span>
-                  <span className="font-data text-stone-800">{formatMoney(item.value)}</span>
+                  <span className="font-data text-stone-900">{formatMoney(item.value)}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] uppercase tracking-[0.12em] text-stone-400">Share</span>
-                  <div className="h-1.5 flex-1 overflow-hidden bg-stone-100">
-                    <div className="h-full bg-stone-700" style={{ width: `${Math.max((item.value / maxCustomers) * 100, 10)}%` }} />
+                  <span className="text-xs text-stone-500">Share</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-stone-200/60">
+                    <div className="h-full rounded-full bg-emerald-600" style={{ width: `${Math.max((item.value / maxCustomers) * 100, 10)}%` }} />
                   </div>
                 </div>
               </div>

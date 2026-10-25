@@ -56,8 +56,7 @@ export default function SettingsPage() {
     <main className="mx-auto max-w-5xl p-4 sm:p-6 xl:p-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-stone-400">Workspace</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-stone-900">Settings</h1>
+          <h1 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">Settings</h1>
         </div>
         <Button variant="primary" className="h-10 px-4 text-sm">Save changes</Button>
       </div>
@@ -78,7 +77,7 @@ export default function SettingsPage() {
                     <span className="font-data text-sm text-stone-800">{field.value}</span>
                     <button
                       type="button"
-                      className="text-sm font-medium text-emerald-700 transition-colors hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
+                      className="text-sm font-medium text-stone-900 underline underline-offset-4 transition-colors hover:text-stone-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-900 focus-visible:ring-offset-2"
                     >
                       Edit
                     </button>
